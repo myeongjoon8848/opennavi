@@ -1,0 +1,8 @@
+{
+  "name": "asm-browser",
+  "description": "Browser automation plugin with ASM (Agent Site Map) integration — Playwright MCP server, browser-agent, and ASM CLI.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Myungjun Kim"
+  }
+}

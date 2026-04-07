@@ -1,0 +1,16 @@
+{
+  "name": "asm-integrations",
+  "owner": {
+    "name": "Myungjun Kim"
+  },
+  "metadata": {
+    "description": "ASM (Agent Site Map) integrations for AI agent platforms"
+  },
+  "plugins": [
+    {
+      "name": "asm-browser",
+      "source": "./claude-code",
+      "description": "Browser automation plugin with ASM integration — Playwright MCP server, browser-agent, and ASM CLI."
+    }
+  ]
+}

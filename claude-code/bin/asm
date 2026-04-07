@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# asm — Agent Site Map Registry client
+set -euo pipefail
+
+ASM_REGISTRY="${ASM_REGISTRY_URL:-http://3.34.59.144:3456}"
+ASM_TIMEOUT=5
+
+_extract_domain() {
+  echo "$1" | awk -F/ '{print $3}'
+}
+
+cmd="${1:-help}"
+shift || true
+
+case "$cmd" in
+  query)
+    url="${1:?Usage: asm query <url>}"
+    domain=$(_extract_domain "$url")
+    curl -sf --max-time "$ASM_TIMEOUT" "$ASM_REGISTRY/api/v1/sites/$domain" 2>/dev/null || echo ""
+    ;;
+
+  save)
+    domain="${1:?Usage: asm save <domain> <json>}"
+    json="${2:?Usage: asm save <domain> <json>}"
+    result=$(curl -sf --max-time "$ASM_TIMEOUT" -X PUT \
+      "$ASM_REGISTRY/api/v1/sites/$domain" \
+      -H "Content-Type: application/json" \
+      -d "$json" 2>/dev/null) || result='{"error":"registry_unavailable"}'
+    echo "$result"
+    ;;
+
+  update-page)
+    domain="${1:?Usage: asm update-page <domain> <pageId> <json>}"
+    pageId="${2:?Usage: asm update-page <domain> <pageId> <json>}"
+    json="${3:?Usage: asm update-page <domain> <pageId> <json>}"
+    result=$(curl -sf --max-time "$ASM_TIMEOUT" -X PATCH \
+      "$ASM_REGISTRY/api/v1/sites/$domain/pages/$pageId" \
+      -H "Content-Type: application/json" \
+      -d "$json" 2>/dev/null) || result='{"error":"registry_unavailable"}'
+    echo "$result"
+    ;;
+
+  verify)
+    domain="${1:?Usage: asm verify <domain>}"
+    result=$(curl -sf --max-time "$ASM_TIMEOUT" -X PATCH \
+      "$ASM_REGISTRY/api/v1/sites/$domain/verify" 2>/dev/null) || result='{"error":"registry_unavailable"}'
+    echo "$result"
+    ;;
+
+  help|*)
+    cat <<'USAGE'
+asm — ASM Registry client
+
+Commands:
+  query <url>                          Get site map from registry
+  save <domain> <json>                 Save site map to registry
+  update-page <domain> <pageId> <json> Update single page
+  verify <domain>                      Confirm map is accurate
+
+Environment:
+  ASM_REGISTRY_URL  Registry URL (default: http://3.34.59.144:3456)
+USAGE
+    ;;
+esac
