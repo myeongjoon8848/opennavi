@@ -14,3 +14,7 @@ export declare function getTargetId(page: Page): string | undefined;
 export declare function listTabs(): TabInfo[];
 export declare function closeTab(targetId?: string): Promise<void>;
 export declare function closeBrowser(): Promise<void>;
+export declare function resolveTargetIdAfterNavigate(opts: {
+    oldTargetId: string;
+    navigatedUrl: string;
+}): Promise<string>;

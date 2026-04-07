@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 const zod_1 = require("zod");
 const mcp_js_1 = require("@modelcontextprotocol/sdk/server/mcp.js");
@@ -6,6 +39,8 @@ const stdio_js_1 = require("@modelcontextprotocol/sdk/server/stdio.js");
 const session_js_1 = require("./session.js");
 const snapshot_js_1 = require("./snapshot.js");
 const actions_js_1 = require("./actions.js");
+const refs_js_1 = require("./refs.js");
+const labels_js_1 = require("./labels.js");
 const asm_js_1 = require("./asm.js");
 const EXTERNAL_CONTENT_BOUNDARY = "---EXTERNAL_BROWSER_CONTENT---";
 function wrapExternalContent(text) {
@@ -27,9 +62,11 @@ async function getPageInfo(page) {
     catch { }
     return { url: page.url(), title };
 }
+// Track last snapshot refs for labeled screenshots
+let lastSnapshotRefs = {};
 const server = new mcp_js_1.McpServer({
     name: "browser-mcp",
-    version: "1.0.0",
+    version: "2.0.0",
 });
 server.registerTool("browser", {
     title: "Browser",
@@ -40,6 +77,8 @@ server.registerTool("browser", {
         "Use act with a ref to interact: click, type, press, hover, drag, fill, select, wait, evaluate.",
         "navigate and act return a snapshot automatically — no need to call snapshot separately.",
         "Refs reset on each new snapshot, so always use the latest refs.",
+        "Set labels=true on snapshot/navigate to get a labeled screenshot alongside the snapshot.",
+        "Set interactive=true to show only interactive elements (buttons, links, inputs).",
     ].join(" "),
     inputSchema: {
         action: zod_1.z.enum(["navigate", "snapshot", "act", "screenshot", "tabs", "open", "close"]).describe("The browser action to perform"),
@@ -47,6 +86,9 @@ server.registerTool("browser", {
         targetId: zod_1.z.string().optional().describe("Target tab ID from tabs/open response"),
         maxChars: zod_1.z.number().optional().describe("Max chars for snapshot (default 50000)"),
         selector: zod_1.z.string().optional().describe("CSS selector to scope snapshot/screenshot"),
+        interactive: zod_1.z.boolean().optional().describe("Show only interactive elements in snapshot"),
+        compact: zod_1.z.boolean().optional().describe("Remove empty structural elements from snapshot"),
+        labels: zod_1.z.boolean().optional().describe("Include labeled screenshot with snapshot (overlays ref badges on elements)"),
         kind: zod_1.z.enum(["click", "type", "press", "hover", "drag", "fill", "select", "wait", "evaluate"]).optional().describe("Act sub-action kind"),
         ref: zod_1.z.string().optional().describe("Element ref from snapshot (e.g. e1, e2)"),
         text: zod_1.z.string().optional().describe("Text for type/fill"),
@@ -92,51 +134,82 @@ server.registerTool("browser", {
                         await page.goto(url, { waitUntil: "networkidle", timeout: 30000 });
                     }
                 }
-                const info = await getPageInfo(page);
-                const snap = await (0, snapshot_js_1.takeSnapshot)(page, {
+                // SPA navigation recovery
+                const oldTid = (0, session_js_1.getTargetId)(page);
+                const tid = oldTid
+                    ? await (0, session_js_1.resolveTargetIdAfterNavigate)({ oldTargetId: oldTid, navigatedUrl: url })
+                    : (0, session_js_1.getTargetId)(page);
+                const resolvedPage = tid ? (0, session_js_1.getPage)(tid) : page;
+                (0, refs_js_1.restoreRefs)(resolvedPage, tid);
+                const info = await getPageInfo(resolvedPage);
+                const snap = await (0, snapshot_js_1.takeSnapshot)(resolvedPage, {
                     maxChars: params.maxChars,
+                    interactive: params.interactive,
+                    compact: params.compact,
+                    targetId: tid,
                 });
-                const tid = (0, session_js_1.getTargetId)(page);
-                return {
-                    content: [
-                        {
-                            type: "text",
-                            text: wrapExternalContent(JSON.stringify({
-                                ok: true,
-                                action: "navigate",
-                                targetId: tid,
-                                ...info,
-                                truncated: snap.truncated,
-                                snapshot: snap.snapshot,
-                            }, null, 2)),
-                        },
-                    ],
-                };
+                lastSnapshotRefs = snap.refs;
+                const content = [
+                    {
+                        type: "text",
+                        text: wrapExternalContent(JSON.stringify({
+                            ok: true,
+                            action: "navigate",
+                            targetId: tid,
+                            ...info,
+                            truncated: snap.truncated,
+                            refsCount: Object.keys(snap.refs).length,
+                            snapshot: snap.snapshot,
+                        }, null, 2)),
+                    },
+                ];
+                if (params.labels) {
+                    const labeled = await (0, labels_js_1.screenshotWithLabels)({ page: resolvedPage, refs: snap.refs });
+                    content.push({
+                        type: "image",
+                        data: labeled.buffer.toString("base64"),
+                        mimeType: "image/png",
+                    });
+                }
+                return { content };
             }
             case "snapshot": {
                 await (0, session_js_1.ensureBrowser)();
                 const page = (0, session_js_1.getPage)(targetId);
+                (0, refs_js_1.restoreRefs)(page, targetId);
                 const info = await getPageInfo(page);
+                const tid = (0, session_js_1.getTargetId)(page);
                 const snap = await (0, snapshot_js_1.takeSnapshot)(page, {
                     maxChars: params.maxChars,
                     selector: params.selector,
+                    interactive: params.interactive,
+                    compact: params.compact,
+                    targetId: tid,
                 });
-                const tid = (0, session_js_1.getTargetId)(page);
-                return {
-                    content: [
-                        {
-                            type: "text",
-                            text: wrapExternalContent(JSON.stringify({
-                                ok: true,
-                                action: "snapshot",
-                                targetId: tid,
-                                ...info,
-                                truncated: snap.truncated,
-                                snapshot: snap.snapshot,
-                            }, null, 2)),
-                        },
-                    ],
-                };
+                lastSnapshotRefs = snap.refs;
+                const content = [
+                    {
+                        type: "text",
+                        text: wrapExternalContent(JSON.stringify({
+                            ok: true,
+                            action: "snapshot",
+                            targetId: tid,
+                            ...info,
+                            truncated: snap.truncated,
+                            refsCount: Object.keys(snap.refs).length,
+                            snapshot: snap.snapshot,
+                        }, null, 2)),
+                    },
+                ];
+                if (params.labels) {
+                    const labeled = await (0, labels_js_1.screenshotWithLabels)({ page, refs: snap.refs });
+                    content.push({
+                        type: "image",
+                        data: labeled.buffer.toString("base64"),
+                        mimeType: "image/png",
+                    });
+                }
+                return { content };
             }
             case "act": {
                 const kind = params.kind;
@@ -144,6 +217,7 @@ server.registerTool("browser", {
                     throw new Error("kind is required for act");
                 await (0, session_js_1.ensureBrowser)();
                 const page = (0, session_js_1.getPage)(targetId);
+                (0, refs_js_1.restoreRefs)(page, targetId);
                 const request = {
                     kind: kind,
                     ref: params.ref,
@@ -167,10 +241,14 @@ server.registerTool("browser", {
                 };
                 const actResult = await (0, actions_js_1.executeAct)(page, request);
                 const info = await getPageInfo(page);
+                const tid = (0, session_js_1.getTargetId)(page);
                 const snap = await (0, snapshot_js_1.takeSnapshot)(page, {
                     maxChars: params.maxChars,
+                    interactive: params.interactive,
+                    compact: params.compact,
+                    targetId: tid,
                 });
-                const tid = (0, session_js_1.getTargetId)(page);
+                lastSnapshotRefs = snap.refs;
                 return {
                     content: [
                         {
@@ -183,6 +261,7 @@ server.registerTool("browser", {
                                 ...info,
                                 result: actResult,
                                 truncated: snap.truncated,
+                                refsCount: Object.keys(snap.refs).length,
                                 snapshot: snap.snapshot,
                             }, null, 2)),
                         },
@@ -192,10 +271,29 @@ server.registerTool("browser", {
             case "screenshot": {
                 await (0, session_js_1.ensureBrowser)();
                 const page = (0, session_js_1.getPage)(targetId);
+                (0, refs_js_1.restoreRefs)(page, targetId);
                 const fullPage = params.fullPage ?? false;
+                // If labels requested and we have refs, use labeled screenshot
+                if (params.labels && Object.keys(lastSnapshotRefs).length > 0) {
+                    const labeled = await (0, labels_js_1.screenshotWithLabels)({
+                        page,
+                        refs: lastSnapshotRefs,
+                        fullPage,
+                    });
+                    return {
+                        content: [
+                            {
+                                type: "image",
+                                data: labeled.buffer.toString("base64"),
+                                mimeType: "image/png",
+                            },
+                        ],
+                    };
+                }
                 let buffer;
                 if (params.ref) {
-                    const locator = page.locator(`aria-ref=${params.ref}`);
+                    const { refLocator } = await Promise.resolve().then(() => __importStar(require("./refs.js")));
+                    const locator = refLocator(page, params.ref);
                     buffer = await locator.screenshot({ type: "png" });
                 }
                 else if (params.selector) {
@@ -204,12 +302,11 @@ server.registerTool("browser", {
                 else {
                     buffer = await page.screenshot({ type: "png", fullPage });
                 }
-                const base64 = buffer.toString("base64");
                 return {
                     content: [
                         {
                             type: "image",
-                            data: base64,
+                            data: buffer.toString("base64"),
                             mimeType: "image/png",
                         },
                     ],
@@ -218,7 +315,6 @@ server.registerTool("browser", {
             case "tabs": {
                 await (0, session_js_1.ensureBrowser)();
                 const tabs = (0, session_js_1.listTabs)();
-                // Enrich with titles
                 for (const tab of tabs) {
                     try {
                         const page = (0, session_js_1.getPage)(tab.targetId);
@@ -243,7 +339,11 @@ server.registerTool("browser", {
                 if (url) {
                     snap = await (0, snapshot_js_1.takeSnapshot)(tab.page, {
                         maxChars: params.maxChars,
+                        interactive: params.interactive,
+                        compact: params.compact,
+                        targetId: tab.targetId,
                     });
+                    lastSnapshotRefs = snap.refs;
                 }
                 const result = {
                     ok: true,
@@ -253,6 +353,7 @@ server.registerTool("browser", {
                 };
                 if (snap) {
                     result.truncated = snap.truncated;
+                    result.refsCount = Object.keys(snap.refs).length;
                     result.snapshot = snap.snapshot;
                 }
                 return {

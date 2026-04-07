@@ -1,4 +1,5 @@
 import type { Page } from "playwright-core";
+import { refLocator } from "./refs.js";
 
 export type ActKind =
   | "click"
@@ -31,11 +32,6 @@ export interface ActRequest {
   url?: string;
   fn?: string;
   timeoutMs?: number;
-}
-
-function refLocator(page: Page, ref: string) {
-  // _snapshotForAI produces refs like [ref=e1], resolved via aria-ref= locator
-  return page.locator(`aria-ref=${ref}`);
 }
 
 function requireRef(request: ActRequest): string {

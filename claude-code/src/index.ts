@@ -9,9 +9,12 @@ import {
   listTabs,
   closeTab,
   closeBrowser,
+  resolveTargetIdAfterNavigate,
 } from "./session.js";
 import { takeSnapshot } from "./snapshot.js";
 import { executeAct, type ActRequest } from "./actions.js";
+import { restoreRefs, type RoleRefMap } from "./refs.js";
+import { screenshotWithLabels } from "./labels.js";
 import { asmQuery, asmSave, asmVerify, asmUpdatePage } from "./asm.js";
 
 const EXTERNAL_CONTENT_BOUNDARY = "---EXTERNAL_BROWSER_CONTENT---";
@@ -36,9 +39,12 @@ async function getPageInfo(page: Awaited<ReturnType<typeof getPage>>) {
   return { url: page.url(), title };
 }
 
+// Track last snapshot refs for labeled screenshots
+let lastSnapshotRefs: RoleRefMap = {};
+
 const server = new McpServer({
   name: "browser-mcp",
-  version: "1.0.0",
+  version: "2.0.0",
 });
 
 server.registerTool("browser", {
@@ -50,6 +56,8 @@ server.registerTool("browser", {
     "Use act with a ref to interact: click, type, press, hover, drag, fill, select, wait, evaluate.",
     "navigate and act return a snapshot automatically — no need to call snapshot separately.",
     "Refs reset on each new snapshot, so always use the latest refs.",
+    "Set labels=true on snapshot/navigate to get a labeled screenshot alongside the snapshot.",
+    "Set interactive=true to show only interactive elements (buttons, links, inputs).",
   ].join(" "),
   inputSchema: {
     action: z.enum(["navigate", "snapshot", "act", "screenshot", "tabs", "open", "close"]).describe("The browser action to perform"),
@@ -57,6 +65,9 @@ server.registerTool("browser", {
     targetId: z.string().optional().describe("Target tab ID from tabs/open response"),
     maxChars: z.number().optional().describe("Max chars for snapshot (default 50000)"),
     selector: z.string().optional().describe("CSS selector to scope snapshot/screenshot"),
+    interactive: z.boolean().optional().describe("Show only interactive elements in snapshot"),
+    compact: z.boolean().optional().describe("Remove empty structural elements from snapshot"),
+    labels: z.boolean().optional().describe("Include labeled screenshot with snapshot (overlays ref badges on elements)"),
     kind: z.enum(["click", "type", "press", "hover", "drag", "fill", "select", "wait", "evaluate"]).optional().describe("Act sub-action kind"),
     ref: z.string().optional().describe("Element ref from snapshot (e.g. e1, e2)"),
     text: z.string().optional().describe("Text for type/fill"),
@@ -102,58 +113,95 @@ server.registerTool("browser", {
           }
         }
 
-        const info = await getPageInfo(page);
-        const snap = await takeSnapshot(page, {
-          maxChars: params.maxChars,
-        });
-        const tid = getTargetId(page);
+        // SPA navigation recovery
+        const oldTid = getTargetId(page);
+        const tid = oldTid
+          ? await resolveTargetIdAfterNavigate({ oldTargetId: oldTid, navigatedUrl: url })
+          : getTargetId(page);
 
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: wrapExternalContent(
-                JSON.stringify({
-                  ok: true,
-                  action: "navigate",
-                  targetId: tid,
-                  ...info,
-                  truncated: snap.truncated,
-                  snapshot: snap.snapshot,
-                }, null, 2),
-              ),
-            },
-          ],
-        };
+        const resolvedPage = tid ? getPage(tid) : page;
+        restoreRefs(resolvedPage, tid);
+
+        const info = await getPageInfo(resolvedPage);
+        const snap = await takeSnapshot(resolvedPage, {
+          maxChars: params.maxChars,
+          interactive: params.interactive,
+          compact: params.compact,
+          targetId: tid,
+        });
+        lastSnapshotRefs = snap.refs;
+
+        const content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }> = [
+          {
+            type: "text" as const,
+            text: wrapExternalContent(
+              JSON.stringify({
+                ok: true,
+                action: "navigate",
+                targetId: tid,
+                ...info,
+                truncated: snap.truncated,
+                refsCount: Object.keys(snap.refs).length,
+                snapshot: snap.snapshot,
+              }, null, 2),
+            ),
+          },
+        ];
+
+        if (params.labels) {
+          const labeled = await screenshotWithLabels({ page: resolvedPage, refs: snap.refs });
+          content.push({
+            type: "image" as const,
+            data: labeled.buffer.toString("base64"),
+            mimeType: "image/png",
+          });
+        }
+
+        return { content };
       }
 
       case "snapshot": {
         await ensureBrowser();
         const page = getPage(targetId);
+        restoreRefs(page, targetId);
         const info = await getPageInfo(page);
+        const tid = getTargetId(page);
         const snap = await takeSnapshot(page, {
           maxChars: params.maxChars,
           selector: params.selector,
+          interactive: params.interactive,
+          compact: params.compact,
+          targetId: tid,
         });
-        const tid = getTargetId(page);
+        lastSnapshotRefs = snap.refs;
 
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: wrapExternalContent(
-                JSON.stringify({
-                  ok: true,
-                  action: "snapshot",
-                  targetId: tid,
-                  ...info,
-                  truncated: snap.truncated,
-                  snapshot: snap.snapshot,
-                }, null, 2),
-              ),
-            },
-          ],
-        };
+        const content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }> = [
+          {
+            type: "text" as const,
+            text: wrapExternalContent(
+              JSON.stringify({
+                ok: true,
+                action: "snapshot",
+                targetId: tid,
+                ...info,
+                truncated: snap.truncated,
+                refsCount: Object.keys(snap.refs).length,
+                snapshot: snap.snapshot,
+              }, null, 2),
+            ),
+          },
+        ];
+
+        if (params.labels) {
+          const labeled = await screenshotWithLabels({ page, refs: snap.refs });
+          content.push({
+            type: "image" as const,
+            data: labeled.buffer.toString("base64"),
+            mimeType: "image/png",
+          });
+        }
+
+        return { content };
       }
 
       case "act": {
@@ -162,6 +210,7 @@ server.registerTool("browser", {
 
         await ensureBrowser();
         const page = getPage(targetId);
+        restoreRefs(page, targetId);
         const request: ActRequest = {
           kind: kind as ActRequest["kind"],
           ref: params.ref,
@@ -186,10 +235,14 @@ server.registerTool("browser", {
 
         const actResult = await executeAct(page, request);
         const info = await getPageInfo(page);
+        const tid = getTargetId(page);
         const snap = await takeSnapshot(page, {
           maxChars: params.maxChars,
+          interactive: params.interactive,
+          compact: params.compact,
+          targetId: tid,
         });
-        const tid = getTargetId(page);
+        lastSnapshotRefs = snap.refs;
 
         return {
           content: [
@@ -204,6 +257,7 @@ server.registerTool("browser", {
                   ...info,
                   result: actResult,
                   truncated: snap.truncated,
+                  refsCount: Object.keys(snap.refs).length,
                   snapshot: snap.snapshot,
                 }, null, 2),
               ),
@@ -215,11 +269,31 @@ server.registerTool("browser", {
       case "screenshot": {
         await ensureBrowser();
         const page = getPage(targetId);
+        restoreRefs(page, targetId);
         const fullPage = params.fullPage ?? false;
+
+        // If labels requested and we have refs, use labeled screenshot
+        if (params.labels && Object.keys(lastSnapshotRefs).length > 0) {
+          const labeled = await screenshotWithLabels({
+            page,
+            refs: lastSnapshotRefs,
+            fullPage,
+          });
+          return {
+            content: [
+              {
+                type: "image" as const,
+                data: labeled.buffer.toString("base64"),
+                mimeType: "image/png",
+              },
+            ],
+          };
+        }
 
         let buffer: Buffer;
         if (params.ref) {
-          const locator = page.locator(`aria-ref=${params.ref}`);
+          const { refLocator } = await import("./refs.js");
+          const locator = refLocator(page, params.ref);
           buffer = await locator.screenshot({ type: "png" }) as Buffer;
         } else if (params.selector) {
           buffer = await page.locator(params.selector).screenshot({ type: "png" }) as Buffer;
@@ -227,12 +301,11 @@ server.registerTool("browser", {
           buffer = await page.screenshot({ type: "png", fullPage }) as Buffer;
         }
 
-        const base64 = buffer.toString("base64");
         return {
           content: [
             {
               type: "image" as const,
-              data: base64,
+              data: buffer.toString("base64"),
               mimeType: "image/png",
             },
           ],
@@ -242,7 +315,6 @@ server.registerTool("browser", {
       case "tabs": {
         await ensureBrowser();
         const tabs = listTabs();
-        // Enrich with titles
         for (const tab of tabs) {
           try {
             const page = getPage(tab.targetId);
@@ -268,7 +340,11 @@ server.registerTool("browser", {
         if (url) {
           snap = await takeSnapshot(tab.page, {
             maxChars: params.maxChars,
+            interactive: params.interactive,
+            compact: params.compact,
+            targetId: tab.targetId,
           });
+          lastSnapshotRefs = snap.refs;
         }
 
         const result: Record<string, unknown> = {
@@ -279,6 +355,7 @@ server.registerTool("browser", {
         };
         if (snap) {
           result.truncated = snap.truncated;
+          result.refsCount = Object.keys(snap.refs).length;
           result.snapshot = snap.snapshot;
         }
 

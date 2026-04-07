@@ -7,6 +7,7 @@ exports.getTargetId = getTargetId;
 exports.listTabs = listTabs;
 exports.closeTab = closeTab;
 exports.closeBrowser = closeBrowser;
+exports.resolveTargetIdAfterNavigate = resolveTargetIdAfterNavigate;
 const playwright_core_1 = require("playwright-core");
 const node_os_1 = require("node:os");
 const promises_1 = require("node:fs/promises");
@@ -26,7 +27,6 @@ async function ensureBrowser() {
     userDataDir = await (0, promises_1.mkdtemp)((0, node_path_1.join)((0, node_os_1.tmpdir)(), "browser-mcp-"));
     browser = await playwright_core_1.chromium.launch({ headless: false });
     context = await browser.newContext();
-    // Track the default page if one exists
     const existingPages = context.pages();
     for (const page of existingPages) {
         const id = nextTargetId();
@@ -53,7 +53,6 @@ function getPage(targetId) {
             throw new Error(`Tab not found: ${targetId}. Use action="tabs" to list open tabs.`);
         return page;
     }
-    // Return the most recently added page
     const entries = [...pages.entries()];
     if (entries.length === 0)
         throw new Error("No open tabs. Use action='open' to open a tab.");
@@ -82,7 +81,6 @@ async function closeTab(targetId) {
         }
     }
     else {
-        // Close the current (last) page
         const entries = [...pages.entries()];
         if (entries.length > 0) {
             const [id, page] = entries[entries.length - 1];
@@ -117,4 +115,31 @@ async function closeBrowser() {
         userDataDir = null;
     }
     tabCounter = 0;
+}
+// --- SPA Navigation Recovery ---
+async function resolveTargetIdAfterNavigate(opts) {
+    try {
+        const pickReplacement = (tabs, options) => {
+            if (tabs.some((tab) => tab.targetId === opts.oldTargetId)) {
+                return opts.oldTargetId;
+            }
+            const byUrl = tabs.filter((tab) => tab.url === opts.navigatedUrl);
+            if (byUrl.length === 1) {
+                return byUrl[0].targetId;
+            }
+            if (options?.allowSingleTabFallback && tabs.length === 1) {
+                return tabs[0].targetId;
+            }
+            return opts.oldTargetId;
+        };
+        let targetId = pickReplacement(listTabs());
+        if (targetId === opts.oldTargetId && !pages.has(opts.oldTargetId)) {
+            await new Promise((r) => setTimeout(r, 800));
+            targetId = pickReplacement(listTabs(), { allowSingleTabFallback: true });
+        }
+        return targetId;
+    }
+    catch {
+        return opts.oldTargetId;
+    }
 }
