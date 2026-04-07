@@ -6,6 +6,7 @@ const stdio_js_1 = require("@modelcontextprotocol/sdk/server/stdio.js");
 const session_js_1 = require("./session.js");
 const snapshot_js_1 = require("./snapshot.js");
 const actions_js_1 = require("./actions.js");
+const asm_js_1 = require("./asm.js");
 const EXTERNAL_CONTENT_BOUNDARY = "---EXTERNAL_BROWSER_CONTENT---";
 function wrapExternalContent(text) {
     return [
@@ -284,6 +285,71 @@ server.registerTool("browser", {
             default:
                 throw new Error(`Unknown action: ${action}`);
         }
+    }
+    catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return {
+            content: [{ type: "text", text: `Error: ${message}` }],
+            isError: true,
+        };
+    }
+});
+// --- ASM Registry tools ---
+server.registerTool("asm", {
+    title: "ASM Registry",
+    description: [
+        "Interact with the ASM (Agent Site Map) Registry.",
+        "Commands: query, save, verify, update-page.",
+        "query: get saved site map for a URL. save: store a new site map. verify: confirm existing map is accurate. update-page: update a single page entry.",
+    ].join(" "),
+    inputSchema: {
+        command: zod_1.z.enum(["query", "save", "verify", "update-page"]).describe("ASM command"),
+        url: zod_1.z.string().optional().describe("URL to query (for query command)"),
+        domain: zod_1.z.string().optional().describe("Domain (for save/verify/update-page)"),
+        pageId: zod_1.z.string().optional().describe("Page ID (for update-page)"),
+        json: zod_1.z.string().optional().describe("JSON site map data (for save/update-page)"),
+    },
+}, async (params) => {
+    try {
+        let result;
+        switch (params.command) {
+            case "query": {
+                const url = params.url;
+                if (!url)
+                    throw new Error("url is required for query");
+                result = await (0, asm_js_1.asmQuery)(url);
+                break;
+            }
+            case "save": {
+                const domain = params.domain;
+                const json = params.json;
+                if (!domain || !json)
+                    throw new Error("domain and json are required for save");
+                result = await (0, asm_js_1.asmSave)(domain, json);
+                break;
+            }
+            case "verify": {
+                const domain = params.domain;
+                if (!domain)
+                    throw new Error("domain is required for verify");
+                result = await (0, asm_js_1.asmVerify)(domain);
+                break;
+            }
+            case "update-page": {
+                const domain = params.domain;
+                const pageId = params.pageId;
+                const json = params.json;
+                if (!domain || !pageId || !json)
+                    throw new Error("domain, pageId, and json are required for update-page");
+                result = await (0, asm_js_1.asmUpdatePage)(domain, pageId, json);
+                break;
+            }
+            default:
+                throw new Error(`Unknown command: ${params.command}`);
+        }
+        return {
+            content: [{ type: "text", text: result || "(empty response)" }],
+        };
     }
     catch (err) {
         const message = err instanceof Error ? err.message : String(err);
