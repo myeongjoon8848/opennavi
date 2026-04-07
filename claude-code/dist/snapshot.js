@@ -1,3 +1,6 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.takeSnapshot = takeSnapshot;
 const DEFAULT_MAX_CHARS = 50_000;
 function truncate(text, maxChars) {
     if (text.length <= maxChars)
@@ -7,7 +10,7 @@ function truncate(text, maxChars) {
         truncated: true,
     };
 }
-export async function takeSnapshot(page, opts) {
+async function takeSnapshot(page, opts) {
     const maxChars = opts?.maxChars ?? DEFAULT_MAX_CHARS;
     // If a selector is given, scope to that element
     if (opts?.selector) {

@@ -1,7 +1,7 @@
 ---
 name: browser-agent
 description: "Web browsing subagent. Navigates websites, extracts content, fills forms, takes screenshots. Uses ASM (Agent Site Map) for efficient revisits. Spawn this agent for any browser automation task."
-tools: Bash, Read, Glob, Grep
+tools: Bash, Read, Glob, Grep, mcp__plugin_asm-browser_playwright__browser
 ---
 
 # Browser Agent

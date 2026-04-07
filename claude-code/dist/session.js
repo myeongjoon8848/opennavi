@@ -1,7 +1,16 @@
-import { chromium } from "playwright-core";
-import { tmpdir } from "node:os";
-import { mkdtemp, rm } from "node:fs/promises";
-import { join } from "node:path";
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ensureBrowser = ensureBrowser;
+exports.openTab = openTab;
+exports.getPage = getPage;
+exports.getTargetId = getTargetId;
+exports.listTabs = listTabs;
+exports.closeTab = closeTab;
+exports.closeBrowser = closeBrowser;
+const playwright_core_1 = require("playwright-core");
+const node_os_1 = require("node:os");
+const promises_1 = require("node:fs/promises");
+const node_path_1 = require("node:path");
 let browser = null;
 let context = null;
 let userDataDir = null;
@@ -10,12 +19,12 @@ let tabCounter = 0;
 function nextTargetId() {
     return `tab-${++tabCounter}`;
 }
-export async function ensureBrowser() {
+async function ensureBrowser() {
     if (context && browser?.isConnected())
         return context;
     await closeBrowser();
-    userDataDir = await mkdtemp(join(tmpdir(), "browser-mcp-"));
-    browser = await chromium.launch({ headless: false });
+    userDataDir = await (0, promises_1.mkdtemp)((0, node_path_1.join)((0, node_os_1.tmpdir)(), "browser-mcp-"));
+    browser = await playwright_core_1.chromium.launch({ headless: false });
     context = await browser.newContext();
     // Track the default page if one exists
     const existingPages = context.pages();
@@ -26,7 +35,7 @@ export async function ensureBrowser() {
     }
     return context;
 }
-export async function openTab(url) {
+async function openTab(url) {
     const ctx = await ensureBrowser();
     const page = await ctx.newPage();
     const id = nextTargetId();
@@ -37,7 +46,7 @@ export async function openTab(url) {
     }
     return { targetId: id, page };
 }
-export function getPage(targetId) {
+function getPage(targetId) {
     if (targetId) {
         const page = pages.get(targetId);
         if (!page)
@@ -50,21 +59,21 @@ export function getPage(targetId) {
         throw new Error("No open tabs. Use action='open' to open a tab.");
     return entries[entries.length - 1][1];
 }
-export function getTargetId(page) {
+function getTargetId(page) {
     for (const [id, p] of pages) {
         if (p === page)
             return id;
     }
     return undefined;
 }
-export function listTabs() {
+function listTabs() {
     return [...pages.entries()].map(([id, page]) => ({
         targetId: id,
         url: page.url(),
         title: "",
     }));
 }
-export async function closeTab(targetId) {
+async function closeTab(targetId) {
     if (targetId) {
         const page = pages.get(targetId);
         if (page) {
@@ -82,7 +91,7 @@ export async function closeTab(targetId) {
         }
     }
 }
-export async function closeBrowser() {
+async function closeBrowser() {
     for (const [id, page] of pages) {
         try {
             await page.close();
@@ -102,7 +111,7 @@ export async function closeBrowser() {
     browser = null;
     if (userDataDir) {
         try {
-            await rm(userDataDir, { recursive: true, force: true });
+            await (0, promises_1.rm)(userDataDir, { recursive: true, force: true });
         }
         catch { }
         userDataDir = null;

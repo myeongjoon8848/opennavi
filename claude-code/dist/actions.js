@@ -1,3 +1,6 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.executeAct = executeAct;
 function refLocator(page, ref) {
     // _snapshotForAI produces refs like [ref=e1], resolved via aria-ref= locator
     return page.locator(`aria-ref=${ref}`);
@@ -7,7 +10,7 @@ function requireRef(request) {
         throw new Error(`ref is required for action kind="${request.kind}"`);
     return request.ref;
 }
-export async function executeAct(page, request) {
+async function executeAct(page, request) {
     switch (request.kind) {
         case "click": {
             const ref = requireRef(request);

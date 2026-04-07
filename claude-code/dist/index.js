@@ -1,9 +1,11 @@
-import { z } from "zod";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { ensureBrowser, openTab, getPage, getTargetId, listTabs, closeTab, closeBrowser, } from "./session.js";
-import { takeSnapshot } from "./snapshot.js";
-import { executeAct } from "./actions.js";
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const zod_1 = require("zod");
+const mcp_js_1 = require("@modelcontextprotocol/sdk/server/mcp.js");
+const stdio_js_1 = require("@modelcontextprotocol/sdk/server/stdio.js");
+const session_js_1 = require("./session.js");
+const snapshot_js_1 = require("./snapshot.js");
+const actions_js_1 = require("./actions.js");
 const EXTERNAL_CONTENT_BOUNDARY = "---EXTERNAL_BROWSER_CONTENT---";
 function wrapExternalContent(text) {
     return [
@@ -24,7 +26,7 @@ async function getPageInfo(page) {
     catch { }
     return { url: page.url(), title };
 }
-const server = new McpServer({
+const server = new mcp_js_1.McpServer({
     name: "browser-mcp",
     version: "1.0.0",
 });
@@ -39,29 +41,29 @@ server.registerTool("browser", {
         "Refs reset on each new snapshot, so always use the latest refs.",
     ].join(" "),
     inputSchema: {
-        action: z.enum(["navigate", "snapshot", "act", "screenshot", "tabs", "open", "close"]).describe("The browser action to perform"),
-        url: z.string().optional().describe("URL for navigate/open"),
-        targetId: z.string().optional().describe("Target tab ID from tabs/open response"),
-        maxChars: z.number().optional().describe("Max chars for snapshot (default 50000)"),
-        selector: z.string().optional().describe("CSS selector to scope snapshot/screenshot"),
-        kind: z.enum(["click", "type", "press", "hover", "drag", "fill", "select", "wait", "evaluate"]).optional().describe("Act sub-action kind"),
-        ref: z.string().optional().describe("Element ref from snapshot (e.g. e1, e2)"),
-        text: z.string().optional().describe("Text for type/fill"),
-        key: z.string().optional().describe("Key for press (e.g. Enter, Tab)"),
-        submit: z.boolean().optional().describe("Press Enter after typing"),
-        slowly: z.boolean().optional().describe("Type character by character"),
-        doubleClick: z.boolean().optional().describe("Double click instead of single"),
-        button: z.enum(["left", "right", "middle"]).optional().describe("Mouse button"),
-        modifiers: z.array(z.string()).optional().describe("Keyboard modifiers (Alt, Control, Meta, Shift)"),
-        startRef: z.string().optional().describe("Start ref for drag"),
-        endRef: z.string().optional().describe("End ref for drag"),
-        values: z.array(z.string()).optional().describe("Values for select"),
-        fields: z.array(z.object({ ref: z.string(), value: z.string() })).optional().describe("Fields for fill [{ref, value}, ...]"),
-        timeMs: z.number().optional().describe("Wait duration in ms"),
-        textGone: z.string().optional().describe("Wait for text to disappear"),
-        fn: z.string().optional().describe("JavaScript for evaluate"),
-        timeoutMs: z.number().optional().describe("Timeout for wait actions"),
-        fullPage: z.boolean().optional().describe("Full page screenshot"),
+        action: zod_1.z.enum(["navigate", "snapshot", "act", "screenshot", "tabs", "open", "close"]).describe("The browser action to perform"),
+        url: zod_1.z.string().optional().describe("URL for navigate/open"),
+        targetId: zod_1.z.string().optional().describe("Target tab ID from tabs/open response"),
+        maxChars: zod_1.z.number().optional().describe("Max chars for snapshot (default 50000)"),
+        selector: zod_1.z.string().optional().describe("CSS selector to scope snapshot/screenshot"),
+        kind: zod_1.z.enum(["click", "type", "press", "hover", "drag", "fill", "select", "wait", "evaluate"]).optional().describe("Act sub-action kind"),
+        ref: zod_1.z.string().optional().describe("Element ref from snapshot (e.g. e1, e2)"),
+        text: zod_1.z.string().optional().describe("Text for type/fill"),
+        key: zod_1.z.string().optional().describe("Key for press (e.g. Enter, Tab)"),
+        submit: zod_1.z.boolean().optional().describe("Press Enter after typing"),
+        slowly: zod_1.z.boolean().optional().describe("Type character by character"),
+        doubleClick: zod_1.z.boolean().optional().describe("Double click instead of single"),
+        button: zod_1.z.enum(["left", "right", "middle"]).optional().describe("Mouse button"),
+        modifiers: zod_1.z.array(zod_1.z.string()).optional().describe("Keyboard modifiers (Alt, Control, Meta, Shift)"),
+        startRef: zod_1.z.string().optional().describe("Start ref for drag"),
+        endRef: zod_1.z.string().optional().describe("End ref for drag"),
+        values: zod_1.z.array(zod_1.z.string()).optional().describe("Values for select"),
+        fields: zod_1.z.array(zod_1.z.object({ ref: zod_1.z.string(), value: zod_1.z.string() })).optional().describe("Fields for fill [{ref, value}, ...]"),
+        timeMs: zod_1.z.number().optional().describe("Wait duration in ms"),
+        textGone: zod_1.z.string().optional().describe("Wait for text to disappear"),
+        fn: zod_1.z.string().optional().describe("JavaScript for evaluate"),
+        timeoutMs: zod_1.z.number().optional().describe("Timeout for wait actions"),
+        fullPage: zod_1.z.boolean().optional().describe("Full page screenshot"),
     },
 }, async (params) => {
     const action = params.action;
@@ -72,28 +74,28 @@ server.registerTool("browser", {
                 const url = params.url;
                 if (!url)
                     throw new Error("url is required for navigate");
-                await ensureBrowser();
+                await (0, session_js_1.ensureBrowser)();
                 let page;
                 if (targetId) {
-                    page = getPage(targetId);
+                    page = (0, session_js_1.getPage)(targetId);
                     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
                 }
                 else {
-                    const tabs = listTabs();
+                    const tabs = (0, session_js_1.listTabs)();
                     if (tabs.length === 0) {
-                        const tab = await openTab(url);
+                        const tab = await (0, session_js_1.openTab)(url);
                         page = tab.page;
                     }
                     else {
-                        page = getPage();
+                        page = (0, session_js_1.getPage)();
                         await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
                     }
                 }
                 const info = await getPageInfo(page);
-                const snap = await takeSnapshot(page, {
+                const snap = await (0, snapshot_js_1.takeSnapshot)(page, {
                     maxChars: params.maxChars,
                 });
-                const tid = getTargetId(page);
+                const tid = (0, session_js_1.getTargetId)(page);
                 return {
                     content: [
                         {
@@ -111,14 +113,14 @@ server.registerTool("browser", {
                 };
             }
             case "snapshot": {
-                await ensureBrowser();
-                const page = getPage(targetId);
+                await (0, session_js_1.ensureBrowser)();
+                const page = (0, session_js_1.getPage)(targetId);
                 const info = await getPageInfo(page);
-                const snap = await takeSnapshot(page, {
+                const snap = await (0, snapshot_js_1.takeSnapshot)(page, {
                     maxChars: params.maxChars,
                     selector: params.selector,
                 });
-                const tid = getTargetId(page);
+                const tid = (0, session_js_1.getTargetId)(page);
                 return {
                     content: [
                         {
@@ -139,8 +141,8 @@ server.registerTool("browser", {
                 const kind = params.kind;
                 if (!kind)
                     throw new Error("kind is required for act");
-                await ensureBrowser();
-                const page = getPage(targetId);
+                await (0, session_js_1.ensureBrowser)();
+                const page = (0, session_js_1.getPage)(targetId);
                 const request = {
                     kind: kind,
                     ref: params.ref,
@@ -162,12 +164,12 @@ server.registerTool("browser", {
                     fn: params.fn,
                     timeoutMs: params.timeoutMs,
                 };
-                const actResult = await executeAct(page, request);
+                const actResult = await (0, actions_js_1.executeAct)(page, request);
                 const info = await getPageInfo(page);
-                const snap = await takeSnapshot(page, {
+                const snap = await (0, snapshot_js_1.takeSnapshot)(page, {
                     maxChars: params.maxChars,
                 });
-                const tid = getTargetId(page);
+                const tid = (0, session_js_1.getTargetId)(page);
                 return {
                     content: [
                         {
@@ -187,8 +189,8 @@ server.registerTool("browser", {
                 };
             }
             case "screenshot": {
-                await ensureBrowser();
-                const page = getPage(targetId);
+                await (0, session_js_1.ensureBrowser)();
+                const page = (0, session_js_1.getPage)(targetId);
                 const fullPage = params.fullPage ?? false;
                 let buffer;
                 if (params.ref) {
@@ -213,12 +215,12 @@ server.registerTool("browser", {
                 };
             }
             case "tabs": {
-                await ensureBrowser();
-                const tabs = listTabs();
+                await (0, session_js_1.ensureBrowser)();
+                const tabs = (0, session_js_1.listTabs)();
                 // Enrich with titles
                 for (const tab of tabs) {
                     try {
-                        const page = getPage(tab.targetId);
+                        const page = (0, session_js_1.getPage)(tab.targetId);
                         tab.title = await page.title();
                     }
                     catch { }
@@ -234,11 +236,11 @@ server.registerTool("browser", {
             }
             case "open": {
                 const url = params.url;
-                const tab = await openTab(url);
+                const tab = await (0, session_js_1.openTab)(url);
                 const info = await getPageInfo(tab.page);
                 let snap = undefined;
                 if (url) {
-                    snap = await takeSnapshot(tab.page, {
+                    snap = await (0, snapshot_js_1.takeSnapshot)(tab.page, {
                         maxChars: params.maxChars,
                     });
                 }
@@ -265,10 +267,10 @@ server.registerTool("browser", {
             }
             case "close": {
                 if (targetId) {
-                    await closeTab(targetId);
+                    await (0, session_js_1.closeTab)(targetId);
                 }
                 else {
-                    await closeBrowser();
+                    await (0, session_js_1.closeBrowser)();
                 }
                 return {
                     content: [
@@ -293,15 +295,15 @@ server.registerTool("browser", {
 });
 // Cleanup on exit
 process.on("SIGINT", async () => {
-    await closeBrowser();
+    await (0, session_js_1.closeBrowser)();
     process.exit(0);
 });
 process.on("SIGTERM", async () => {
-    await closeBrowser();
+    await (0, session_js_1.closeBrowser)();
     process.exit(0);
 });
 async function main() {
-    const transport = new StdioServerTransport();
+    const transport = new stdio_js_1.StdioServerTransport();
     await server.connect(transport);
 }
 main().catch((err) => {
