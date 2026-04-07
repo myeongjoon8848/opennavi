@@ -4,6 +4,7 @@ export declare function screenshotWithLabels(opts: {
     page: Page;
     refs: RoleRefMap;
     maxLabels?: number;
+    interactive?: boolean;
     fullPage?: boolean;
 }): Promise<{
     buffer: Buffer;

@@ -2,50 +2,62 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.screenshotWithLabels = screenshotWithLabels;
 const refs_js_1 = require("./refs.js");
+const roles_js_1 = require("./roles.js");
 async function screenshotWithLabels(opts) {
     const { page, refs } = opts;
-    const maxLabels = opts.maxLabels ?? 150;
+    const maxLabels = opts.maxLabels ?? 30;
     const viewport = await page.evaluate(() => ({
         scrollX: window.scrollX || 0,
         scrollY: window.scrollY || 0,
         width: window.innerWidth || 0,
         height: window.innerHeight || 0,
     }));
-    const refKeys = Object.keys(refs);
+    let refKeys = Object.keys(refs);
+    // When interactive=true, only label interactive refs
+    if (opts.interactive) {
+        refKeys = refKeys.filter((key) => {
+            const info = refs[key];
+            return info && roles_js_1.INTERACTIVE_ROLES.has(info.role);
+        });
+    }
+    // Batch all boundingBox() calls via Promise.all
+    const locators = refKeys.slice(0, maxLabels).map((ref) => ({
+        ref,
+        locator: (0, refs_js_1.refLocator)(page, ref),
+    }));
+    const boxResults = await Promise.all(locators.map(async ({ ref, locator }) => {
+        try {
+            const box = await locator.boundingBox();
+            return { ref, box };
+        }
+        catch {
+            return { ref, box: null };
+        }
+    }));
     const boxes = [];
-    let skipped = 0;
-    for (const ref of refKeys) {
-        if (boxes.length >= maxLabels) {
+    let skipped = refKeys.length > maxLabels ? refKeys.length - maxLabels : 0;
+    for (const { ref, box } of boxResults) {
+        if (!box) {
             skipped++;
             continue;
         }
-        try {
-            const box = await (0, refs_js_1.refLocator)(page, ref).boundingBox();
-            if (!box) {
-                skipped++;
-                continue;
-            }
-            // Skip out-of-viewport elements
-            const x1 = box.x + box.width;
-            const y1 = box.y + box.height;
-            if (x1 < viewport.scrollX ||
-                box.x > viewport.scrollX + viewport.width ||
-                y1 < viewport.scrollY ||
-                box.y > viewport.scrollY + viewport.height) {
-                skipped++;
-                continue;
-            }
-            boxes.push({
-                ref,
-                x: box.x - viewport.scrollX,
-                y: box.y - viewport.scrollY,
-                w: Math.max(1, box.width),
-                h: Math.max(1, box.height),
-            });
-        }
-        catch {
+        // Skip out-of-viewport elements
+        const x1 = box.x + box.width;
+        const y1 = box.y + box.height;
+        if (x1 < viewport.scrollX ||
+            box.x > viewport.scrollX + viewport.width ||
+            y1 < viewport.scrollY ||
+            box.y > viewport.scrollY + viewport.height) {
             skipped++;
+            continue;
         }
+        boxes.push({
+            ref,
+            x: box.x - viewport.scrollX,
+            y: box.y - viewport.scrollY,
+            w: Math.max(1, box.width),
+            h: Math.max(1, box.height),
+        });
     }
     try {
         if (boxes.length > 0) {

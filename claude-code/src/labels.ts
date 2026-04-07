@@ -1,14 +1,16 @@
 import type { Page } from "playwright-core";
 import { refLocator, type RoleRefMap } from "./refs.js";
+import { INTERACTIVE_ROLES } from "./roles.js";
 
 export async function screenshotWithLabels(opts: {
   page: Page;
   refs: RoleRefMap;
   maxLabels?: number;
+  interactive?: boolean;
   fullPage?: boolean;
 }): Promise<{ buffer: Buffer; labels: number; skipped: number }> {
   const { page, refs } = opts;
-  const maxLabels = opts.maxLabels ?? 150;
+  const maxLabels = opts.maxLabels ?? 30;
 
   const viewport = await page.evaluate(() => ({
     scrollX: window.scrollX || 0,
@@ -17,43 +19,60 @@ export async function screenshotWithLabels(opts: {
     height: window.innerHeight || 0,
   }));
 
-  const refKeys = Object.keys(refs);
-  const boxes: Array<{ ref: string; x: number; y: number; w: number; h: number }> = [];
-  let skipped = 0;
+  let refKeys = Object.keys(refs);
 
-  for (const ref of refKeys) {
-    if (boxes.length >= maxLabels) {
+  // When interactive=true, only label interactive refs
+  if (opts.interactive) {
+    refKeys = refKeys.filter((key) => {
+      const info = refs[key];
+      return info && INTERACTIVE_ROLES.has(info.role);
+    });
+  }
+
+  // Batch all boundingBox() calls via Promise.all
+  const locators = refKeys.slice(0, maxLabels).map((ref) => ({
+    ref,
+    locator: refLocator(page, ref),
+  }));
+
+  const boxResults = await Promise.all(
+    locators.map(async ({ ref, locator }) => {
+      try {
+        const box = await locator.boundingBox();
+        return { ref, box };
+      } catch {
+        return { ref, box: null };
+      }
+    }),
+  );
+
+  const boxes: Array<{ ref: string; x: number; y: number; w: number; h: number }> = [];
+  let skipped = refKeys.length > maxLabels ? refKeys.length - maxLabels : 0;
+
+  for (const { ref, box } of boxResults) {
+    if (!box) {
       skipped++;
       continue;
     }
-    try {
-      const box = await refLocator(page, ref).boundingBox();
-      if (!box) {
-        skipped++;
-        continue;
-      }
-      // Skip out-of-viewport elements
-      const x1 = box.x + box.width;
-      const y1 = box.y + box.height;
-      if (
-        x1 < viewport.scrollX ||
-        box.x > viewport.scrollX + viewport.width ||
-        y1 < viewport.scrollY ||
-        box.y > viewport.scrollY + viewport.height
-      ) {
-        skipped++;
-        continue;
-      }
-      boxes.push({
-        ref,
-        x: box.x - viewport.scrollX,
-        y: box.y - viewport.scrollY,
-        w: Math.max(1, box.width),
-        h: Math.max(1, box.height),
-      });
-    } catch {
+    // Skip out-of-viewport elements
+    const x1 = box.x + box.width;
+    const y1 = box.y + box.height;
+    if (
+      x1 < viewport.scrollX ||
+      box.x > viewport.scrollX + viewport.width ||
+      y1 < viewport.scrollY ||
+      box.y > viewport.scrollY + viewport.height
+    ) {
       skipped++;
+      continue;
     }
+    boxes.push({
+      ref,
+      x: box.x - viewport.scrollX,
+      y: box.y - viewport.scrollY,
+      w: Math.max(1, box.width),
+      h: Math.max(1, box.height),
+    });
   }
 
   try {

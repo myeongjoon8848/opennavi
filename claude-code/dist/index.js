@@ -166,7 +166,7 @@ server.registerTool("browser", {
                     },
                 ];
                 if (params.labels) {
-                    const labeled = await (0, labels_js_1.screenshotWithLabels)({ page: resolvedPage, refs: snap.refs });
+                    const labeled = await (0, labels_js_1.screenshotWithLabels)({ page: resolvedPage, refs: snap.refs, interactive: params.interactive });
                     content.push({
                         type: "image",
                         data: labeled.buffer.toString("base64"),
@@ -205,7 +205,7 @@ server.registerTool("browser", {
                     },
                 ];
                 if (params.labels) {
-                    const labeled = await (0, labels_js_1.screenshotWithLabels)({ page, refs: snap.refs });
+                    const labeled = await (0, labels_js_1.screenshotWithLabels)({ page, refs: snap.refs, interactive: params.interactive });
                     content.push({
                         type: "image",
                         data: labeled.buffer.toString("base64"),

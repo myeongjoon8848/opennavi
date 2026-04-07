@@ -151,7 +151,7 @@ server.registerTool("browser", {
         ];
 
         if (params.labels) {
-          const labeled = await screenshotWithLabels({ page: resolvedPage, refs: snap.refs });
+          const labeled = await screenshotWithLabels({ page: resolvedPage, refs: snap.refs, interactive: params.interactive });
           content.push({
             type: "image" as const,
             data: labeled.buffer.toString("base64"),
@@ -196,7 +196,7 @@ server.registerTool("browser", {
         ];
 
         if (params.labels) {
-          const labeled = await screenshotWithLabels({ page, refs: snap.refs });
+          const labeled = await screenshotWithLabels({ page, refs: snap.refs, interactive: params.interactive });
           content.push({
             type: "image" as const,
             data: labeled.buffer.toString("base64"),
