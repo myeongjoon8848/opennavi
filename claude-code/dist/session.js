@@ -42,7 +42,7 @@ async function openTab(url) {
     pages.set(id, page);
     page.once("close", () => pages.delete(id));
     if (url) {
-        await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+        await page.goto(url, { waitUntil: "networkidle", timeout: 30000 });
     }
     return { targetId: id, page };
 }

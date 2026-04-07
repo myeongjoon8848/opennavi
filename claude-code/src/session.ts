@@ -47,7 +47,7 @@ export async function openTab(url?: string): Promise<{ targetId: string; page: P
   page.once("close", () => pages.delete(id));
 
   if (url) {
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.goto(url, { waitUntil: "networkidle", timeout: 30000 });
   }
   return { targetId: id, page };
 }

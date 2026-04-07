@@ -90,7 +90,7 @@ server.registerTool("browser", {
         let page;
         if (targetId) {
           page = getPage(targetId);
-          await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+          await page.goto(url, { waitUntil: "networkidle", timeout: 30000 });
         } else {
           const tabs = listTabs();
           if (tabs.length === 0) {
@@ -98,7 +98,7 @@ server.registerTool("browser", {
             page = tab.page;
           } else {
             page = getPage();
-            await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+            await page.goto(url, { waitUntil: "networkidle", timeout: 30000 });
           }
         }
 
