@@ -67,6 +67,7 @@ server.registerTool("browser", {
     selector: z.string().optional().describe("CSS selector to scope snapshot/screenshot"),
     interactive: z.boolean().optional().describe("Show only interactive elements in snapshot"),
     compact: z.boolean().optional().describe("Remove empty structural elements from snapshot"),
+    refsMode: z.enum(["aria", "role"]).optional().describe("Ref resolution mode: aria (default, fast) or role (semantic, SPA-resilient)"),
     labels: z.boolean().optional().describe("Include labeled screenshot with snapshot (overlays ref badges on elements)"),
     kind: z.enum(["click", "type", "press", "hover", "drag", "fill", "select", "wait", "evaluate"]).optional().describe("Act sub-action kind"),
     ref: z.string().optional().describe("Element ref from snapshot (e.g. e1, e2)"),
@@ -127,6 +128,7 @@ server.registerTool("browser", {
           maxChars: params.maxChars,
           interactive: params.interactive,
           compact: params.compact,
+          refsMode: params.refsMode,
           targetId: tid,
         });
         lastSnapshotRefs = snap.refs;
@@ -171,6 +173,7 @@ server.registerTool("browser", {
           selector: params.selector,
           interactive: params.interactive,
           compact: params.compact,
+          refsMode: params.refsMode,
           targetId: tid,
         });
         lastSnapshotRefs = snap.refs;
@@ -240,6 +243,7 @@ server.registerTool("browser", {
           maxChars: params.maxChars,
           interactive: params.interactive,
           compact: params.compact,
+          refsMode: params.refsMode,
           targetId: tid,
         });
         lastSnapshotRefs = snap.refs;
@@ -342,6 +346,7 @@ server.registerTool("browser", {
             maxChars: params.maxChars,
             interactive: params.interactive,
             compact: params.compact,
+            refsMode: params.refsMode,
             targetId: tab.targetId,
           });
           lastSnapshotRefs = snap.refs;
