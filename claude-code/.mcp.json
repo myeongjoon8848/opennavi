@@ -1,9 +1,10 @@
 {
   "mcpServers": {
     "playwright": {
-      "command": "node",
+      "command": "bash",
       "args": [
-        "${CLAUDE_PLUGIN_ROOT}/dist/index.js"
+        "-c",
+        "exec node \"${CLAUDE_PLUGIN_ROOT}/dist/index.js\" 2>/dev/null"
       ],
       "env": {
         "NODE_PATH": "${CLAUDE_PLUGIN_DATA}/node_modules",
