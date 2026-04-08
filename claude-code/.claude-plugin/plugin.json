@@ -1,7 +1,7 @@
 {
   "name": "asm",
   "description": "ASM (Agent Site Map) plugin — browser automation MCP server, browser-use skill, and ASM CLI.",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "author": {
     "name": "Myeongjoon Kim"
   }
