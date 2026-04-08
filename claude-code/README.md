@@ -17,20 +17,13 @@ Claude Code plugin for browser automation with ASM (Agent Site Map) integration.
 ## What's Included
 
 - **MCP server** — single `browser` tool with actions: navigate, snapshot, act, screenshot, tabs, open, close
-- **browser-agent** — subagent for delegated browsing tasks
+- **browse skill** — browser automation skill, auto-invoked or via `/asm-browser:browse`
 - **ASM CLI** (`bin/asm`) — query, save, update, and verify site maps via ASM Registry
 
 ## Usage
 
-### Direct (from main agent)
+The `browse` skill is automatically triggered when a browsing task is detected. You can also invoke it explicitly:
 
 ```
-browser(action="navigate", url="https://example.com")
-browser(action="act", kind="click", ref="e6")
-```
-
-### Via subagent
-
-```
-Agent(subagent_type="browser-agent", prompt="https://example.com 에서 제목을 가져와줘")
+/asm-browser:browse https://example.com 에서 제목을 가져와줘
 ```

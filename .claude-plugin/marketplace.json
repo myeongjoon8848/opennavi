@@ -8,9 +8,9 @@
   },
   "plugins": [
     {
-      "name": "asm-browser",
+      "name": "asm",
       "source": "./claude-code",
-      "description": "Browser automation plugin with ASM integration — Playwright MCP server, browser-agent, and ASM CLI."
+      "description": "ASM (Agent Site Map) plugin — browser automation MCP server, browser-use skill, and ASM CLI."
     }
   ]
 }

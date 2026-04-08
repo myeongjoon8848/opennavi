@@ -1,24 +1,18 @@
 ---
-name: browser-agent
-description: "Web browsing subagent. Navigates websites, extracts content, fills forms, takes screenshots. Uses ASM (Agent Site Map) for efficient revisits. Spawn this agent for any browser automation task."
-tools: Read, Glob, Grep, mcp__plugin_asm-browser_playwright__browser, mcp__plugin_asm-browser_playwright__asm
+name: browser-use
+description: "Browser automation with ASM (Agent Site Map). Navigates websites, extracts content, fills forms, takes screenshots. Uses ASM for efficient revisits. TRIGGER when: user asks to visit a URL, scrape a page, interact with a website, or any browser automation task."
 ---
 
-# Browser Agent
+# Browser Automation
 
-You are a browser automation subagent. You navigate websites, extract information, interact with pages, and return results to the main agent.
-
-## Tools
-
-- `browser` — browser automation (navigate, act, snapshot, screenshot, etc.)
-- `asm` — ASM Registry interaction (query, save, verify, update-page)
+Use the `browser` and `client` tools to navigate websites, extract information, and interact with pages.
 
 ## Step 1: Check Site Map
 
 Before browsing, always check if there is a saved site map:
 
 ```
-asm(command="query", url="https://example.com")
+client(command="query", url="https://example.com")
 ```
 
 If a map exists, use `overview` for site-level context, and each page's `description` for selectors, URL patterns, and tips. If no map exists (empty response), pay extra attention to site structure (see Step 3).
@@ -71,7 +65,7 @@ If a map exists, use `overview` for site-level context, and each page's `descrip
 | Ref not found | DOM changed — take a new snapshot |
 | Element not interactable | Dismiss overlay, or hover to scroll into view |
 | Navigation timeout | Take a screenshot to diagnose |
-| Blocked by bot protection | Wait 5s then retry, or report to main agent |
+| Blocked by bot protection | Wait 5s then retry, or stop and report the issue |
 
 ## Step 3: Observe Site Structure (New Sites Only)
 
@@ -89,10 +83,10 @@ After extracting the information you need, execute these three steps **in order*
 
 ### 4a. Save or verify site map
 
-- **New site**: `asm(command="save", domain="example.com", json='{"overview": "...", "pages": {...}}')`
-- **Returning site (accurate)**: `asm(command="verify", domain="example.com")`
+- **New site**: `client(command="save", domain="example.com", json='{"overview": "...", "pages": {...}}')`
+- **Returning site (accurate)**: `client(command="verify", domain="example.com")`
 - **Returning site (inaccurate)**: use `save` to overwrite
-- **Single page changed**: `asm(command="update-page", domain="example.com", pageId="search", json='...')`
+- **Single page changed**: `client(command="update-page", domain="example.com", pageId="search", json='...')`
 
 ### 4b. Close browser
 
@@ -100,10 +94,10 @@ After extracting the information you need, execute these three steps **in order*
 browser(action="close")
 ```
 
-### 4c. Return results
+### 4c. Report results
 
-Return the extracted content with `[site-map: saved]` or `[site-map: verified]` at the end.
+Include `[site-map: saved]` or `[site-map: verified]` at the end of the response.
 
 ---
 
-**REMINDER: Your response is invalid without `[site-map: saved]` or `[site-map: verified]` at the end.**
+**REMINDER: Always end with `[site-map: saved]` or `[site-map: verified]`.**
