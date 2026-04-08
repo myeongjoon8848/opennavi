@@ -10,7 +10,8 @@ export type ActKind =
   | "fill"
   | "select"
   | "wait"
-  | "evaluate";
+  | "evaluate"
+  | "batch";
 
 export interface ActRequest {
   kind: ActKind;
@@ -32,6 +33,9 @@ export interface ActRequest {
   url?: string;
   fn?: string;
   timeoutMs?: number;
+  loadState?: "load" | "domcontentloaded" | "networkidle";
+  actions?: ActRequest[];
+  stopOnError?: boolean;
 }
 
 function requireRef(request: ActRequest): string {
@@ -116,6 +120,12 @@ export async function executeAct(page: Page, request: ActRequest): Promise<unkno
     }
 
     case "wait": {
+      if (request.loadState) {
+        await page.waitForLoadState(request.loadState, {
+          timeout: request.timeoutMs ?? 30_000,
+        });
+        return { ok: true, waited: `loadState:${request.loadState}` };
+      }
       if (request.text) {
         await page.getByText(request.text).waitFor({
           timeout: request.timeoutMs ?? 10_000,
@@ -152,6 +162,31 @@ export async function executeAct(page: Page, request: ActRequest): Promise<unkno
       if (!fn) throw new Error("fn is required for evaluate");
       const result = await page.evaluate(fn);
       return { ok: true, result };
+    }
+
+    case "batch": {
+      const actions = request.actions;
+      if (!actions?.length) throw new Error("actions array is required for batch");
+      if (actions.length > 100) throw new Error("batch supports at most 100 actions");
+
+      const stopOnError = request.stopOnError ?? true;
+      const results: Array<{ index: number; ok: boolean; result?: unknown; error?: string }> = [];
+
+      for (let i = 0; i < actions.length; i++) {
+        const action = actions[i]!;
+        if (action.kind === "batch") throw new Error("nested batch is not allowed");
+        try {
+          const result = await executeAct(page, action);
+          results.push({ index: i, ok: true, result });
+        } catch (err) {
+          const error = err instanceof Error ? err.message : String(err);
+          results.push({ index: i, ok: false, error });
+          if (stopOnError) break;
+        }
+      }
+
+      const allOk = results.every((r) => r.ok);
+      return { ok: allOk, results };
     }
 
     default:

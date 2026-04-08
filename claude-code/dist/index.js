@@ -42,6 +42,7 @@ const actions_js_1 = require("./actions.js");
 const refs_js_1 = require("./refs.js");
 const labels_js_1 = require("./labels.js");
 const asm_js_1 = require("./asm.js");
+const errors_js_1 = require("./errors.js");
 const EXTERNAL_CONTENT_BOUNDARY = "---EXTERNAL_BROWSER_CONTENT---";
 function wrapExternalContent(text) {
     return [
@@ -72,9 +73,10 @@ server.registerTool("browser", {
     title: "Browser",
     description: [
         "Control the browser via snapshot+act pattern.",
-        "Actions: navigate, snapshot, act, screenshot, tabs, open, close.",
+        "Actions: navigate, snapshot, act, screenshot, tabs, open, close, console.",
         "Use snapshot to get page content with element refs (e1, e2...).",
-        "Use act with a ref to interact: click, type, press, hover, drag, fill, select, wait, evaluate.",
+        "Use act with a ref to interact: click, type, press, hover, drag, fill, select, wait, evaluate, batch.",
+        "Use batch to run multiple actions atomically (e.g. fill form + submit). Pass actions=[{kind, ref, text, ...}].",
         "navigate and act return a snapshot automatically — no need to call snapshot separately.",
         "Refs reset on each new snapshot, so always use the latest refs.",
         "Set labels=true on snapshot/navigate to get a labeled screenshot alongside the snapshot.",
@@ -82,7 +84,7 @@ server.registerTool("browser", {
         "IMPORTANT: Invoke the /asm:browser-use skill before using this tool for the full browsing workflow.",
     ].join(" "),
     inputSchema: {
-        action: zod_1.z.enum(["navigate", "snapshot", "act", "screenshot", "tabs", "open", "close"]).describe("The browser action to perform"),
+        action: zod_1.z.enum(["navigate", "snapshot", "act", "screenshot", "tabs", "open", "close", "console"]).describe("The browser action to perform"),
         url: zod_1.z.string().optional().describe("URL for navigate/open"),
         targetId: zod_1.z.string().optional().describe("Target tab ID from tabs/open response"),
         maxChars: zod_1.z.number().optional().describe("Max chars for snapshot (default 50000)"),
@@ -91,7 +93,7 @@ server.registerTool("browser", {
         compact: zod_1.z.boolean().optional().describe("Remove empty structural elements from snapshot"),
         refsMode: zod_1.z.enum(["aria", "role"]).optional().describe("Ref resolution mode: aria (default, fast) or role (semantic, SPA-resilient)"),
         labels: zod_1.z.boolean().optional().describe("Include labeled screenshot with snapshot (overlays ref badges on elements)"),
-        kind: zod_1.z.enum(["click", "type", "press", "hover", "drag", "fill", "select", "wait", "evaluate"]).optional().describe("Act sub-action kind"),
+        kind: zod_1.z.enum(["click", "type", "press", "hover", "drag", "fill", "select", "wait", "evaluate", "batch"]).optional().describe("Act sub-action kind"),
         ref: zod_1.z.string().optional().describe("Element ref from snapshot (e.g. e1, e2)"),
         text: zod_1.z.string().optional().describe("Text for type/fill"),
         key: zod_1.z.string().optional().describe("Key for press (e.g. Enter, Tab)"),
@@ -107,7 +109,11 @@ server.registerTool("browser", {
         timeMs: zod_1.z.number().optional().describe("Wait duration in ms"),
         textGone: zod_1.z.string().optional().describe("Wait for text to disappear"),
         fn: zod_1.z.string().optional().describe("JavaScript for evaluate"),
-        timeoutMs: zod_1.z.number().optional().describe("Timeout for wait actions"),
+        timeoutMs: zod_1.z.number().optional().describe("Timeout in ms for navigate/wait (default 30000, range 1000-120000)"),
+        loadState: zod_1.z.enum(["load", "domcontentloaded", "networkidle"]).optional().describe("Wait for load state in wait action"),
+        actions: zod_1.z.array(zod_1.z.record(zod_1.z.string(), zod_1.z.unknown())).optional().describe("Array of action objects for batch (each has kind, ref, text, etc.)"),
+        stopOnError: zod_1.z.boolean().optional().describe("Stop batch on first error (default true)"),
+        level: zod_1.z.enum(["log", "info", "warning", "error", "debug"]).optional().describe("Filter console logs by level"),
         fullPage: zod_1.z.boolean().optional().describe("Full page screenshot"),
     },
 }, async (params) => {
@@ -119,21 +125,27 @@ server.registerTool("browser", {
                 const url = params.url;
                 if (!url)
                     throw new Error("url is required for navigate");
+                const timeout = Math.max(1000, Math.min(120_000, params.timeoutMs ?? 30_000));
+                let warning;
                 await (0, session_js_1.ensureBrowser)();
                 let page;
                 if (targetId) {
                     page = (0, session_js_1.getPage)(targetId);
-                    await page.goto(url, { waitUntil: "networkidle", timeout: 30000 });
+                    await page.goto(url, { timeout }).catch(() => {
+                        warning = "Navigation timed out, showing current page state";
+                    });
                 }
                 else {
                     const tabs = (0, session_js_1.listTabs)();
                     if (tabs.length === 0) {
-                        const tab = await (0, session_js_1.openTab)(url);
+                        const tab = await (0, session_js_1.openTab)(url, timeout);
                         page = tab.page;
                     }
                     else {
                         page = (0, session_js_1.getPage)();
-                        await page.goto(url, { waitUntil: "networkidle", timeout: 30000 });
+                        await page.goto(url, { timeout }).catch(() => {
+                            warning = "Navigation timed out, showing current page state";
+                        });
                     }
                 }
                 // SPA navigation recovery
@@ -160,6 +172,7 @@ server.registerTool("browser", {
                             action: "navigate",
                             targetId: tid,
                             ...info,
+                            ...(warning ? { warning } : {}),
                             truncated: snap.truncated,
                             refsCount: Object.keys(snap.refs).length,
                             snapshot: snap.snapshot,
@@ -242,6 +255,9 @@ server.registerTool("browser", {
                     url: params.url,
                     fn: params.fn,
                     timeoutMs: params.timeoutMs,
+                    loadState: params.loadState,
+                    actions: params.actions,
+                    stopOnError: params.stopOnError,
                 };
                 const actResult = await (0, actions_js_1.executeAct)(page, request);
                 const info = await getPageInfo(page);
@@ -389,14 +405,35 @@ server.registerTool("browser", {
                     ],
                 };
             }
+            case "console": {
+                await (0, session_js_1.ensureBrowser)();
+                const tid = targetId ?? (0, session_js_1.getTargetId)((0, session_js_1.getPage)());
+                if (!tid)
+                    throw new Error("No active tab. Use action='open' to open a tab.");
+                const logs = (0, session_js_1.getConsoleLogs)(tid, params.level);
+                const errors = (0, session_js_1.getPageErrors)(tid);
+                return {
+                    content: [
+                        {
+                            type: "text",
+                            text: JSON.stringify({
+                                ok: true,
+                                action: "console",
+                                targetId: tid,
+                                logs,
+                                errors,
+                            }, null, 2),
+                        },
+                    ],
+                };
+            }
             default:
                 throw new Error(`Unknown action: ${action}`);
         }
     }
     catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
         return {
-            content: [{ type: "text", text: `Error: ${message}` }],
+            content: [{ type: "text", text: `Error: ${(0, errors_js_1.toAIFriendlyError)(err)}` }],
             isError: true,
         };
     }

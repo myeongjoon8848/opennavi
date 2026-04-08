@@ -21,31 +21,53 @@ async function takeSnapshot(page, opts) {
     };
     let rawSnapshot;
     let refs;
-    if (opts?.selector) {
-        const locator = page.locator(opts.selector);
-        const ariaSnapshot = await locator.ariaSnapshot();
-        const raw = String(ariaSnapshot ?? "");
-        const built = (0, refs_js_1.buildRefsFromAriaSnapshot)(raw, snapshotOpts);
-        rawSnapshot = built.snapshot;
-        refs = built.refs;
+    try {
+        if (opts?.selector) {
+            const locator = page.locator(opts.selector);
+            const ariaSnapshot = await locator.ariaSnapshot();
+            const raw = String(ariaSnapshot ?? "");
+            const built = (0, refs_js_1.buildRefsFromAriaSnapshot)(raw, snapshotOpts);
+            rawSnapshot = built.snapshot;
+            refs = built.refs;
+        }
+        else if (refsMode === "aria") {
+            // Use Playwright's AI snapshot which includes [ref=eN] markers
+            const snapshot = await page._snapshotForAI?.({ track: "response" })
+                ?? await page.ariaSnapshot?.({ mode: "ai" })
+                ?? "";
+            const raw = String(snapshot);
+            const built = (0, refs_js_1.buildRefsFromAiSnapshot)(raw, snapshotOpts);
+            rawSnapshot = built.snapshot;
+            refs = built.refs;
+        }
+        else {
+            // Role mode: use ariaSnapshot and assign our own refs
+            const ariaSnapshot = await page.ariaSnapshot();
+            const raw = String(ariaSnapshot ?? "");
+            const built = (0, refs_js_1.buildRefsFromAriaSnapshot)(raw, snapshotOpts);
+            rawSnapshot = built.snapshot;
+            refs = built.refs;
+        }
     }
-    else if (refsMode === "aria") {
-        // Use Playwright's AI snapshot which includes [ref=eN] markers
-        const snapshot = await page._snapshotForAI?.({ track: "response" })
-            ?? await page.ariaSnapshot?.({ mode: "ai" })
-            ?? "";
-        const raw = String(snapshot);
-        const built = (0, refs_js_1.buildRefsFromAiSnapshot)(raw, snapshotOpts);
-        rawSnapshot = built.snapshot;
-        refs = built.refs;
-    }
-    else {
-        // Role mode: use ariaSnapshot and assign our own refs
-        const ariaSnapshot = await page.ariaSnapshot();
-        const raw = String(ariaSnapshot ?? "");
-        const built = (0, refs_js_1.buildRefsFromAriaSnapshot)(raw, snapshotOpts);
-        rawSnapshot = built.snapshot;
-        refs = built.refs;
+    catch {
+        // Graceful degradation: if primary mode fails, try fallback
+        try {
+            const ariaSnapshot = await page.ariaSnapshot();
+            const raw = String(ariaSnapshot ?? "");
+            const built = (0, refs_js_1.buildRefsFromAriaSnapshot)(raw, snapshotOpts);
+            rawSnapshot = built.snapshot;
+            refs = built.refs;
+        }
+        catch {
+            // Last resort: return page title and URL as minimal snapshot
+            let title = "";
+            try {
+                title = await page.title();
+            }
+            catch { }
+            rawSnapshot = `(snapshot unavailable — page: ${title || page.url()})`;
+            refs = {};
+        }
     }
     const { text, truncated } = truncate(rawSnapshot, maxChars);
     // Store refs for later resolution

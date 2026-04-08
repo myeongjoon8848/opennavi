@@ -10,12 +10,15 @@ import {
   closeTab,
   closeBrowser,
   resolveTargetIdAfterNavigate,
+  getConsoleLogs,
+  getPageErrors,
 } from "./session.js";
 import { takeSnapshot } from "./snapshot.js";
 import { executeAct, type ActRequest } from "./actions.js";
 import { restoreRefs, type RoleRefMap } from "./refs.js";
 import { screenshotWithLabels } from "./labels.js";
 import { asmQuery, asmSave, asmVerify, asmUpdatePage } from "./asm.js";
+import { toAIFriendlyError } from "./errors.js";
 
 const EXTERNAL_CONTENT_BOUNDARY = "---EXTERNAL_BROWSER_CONTENT---";
 
@@ -51,9 +54,10 @@ server.registerTool("browser", {
   title: "Browser",
   description: [
     "Control the browser via snapshot+act pattern.",
-    "Actions: navigate, snapshot, act, screenshot, tabs, open, close.",
+    "Actions: navigate, snapshot, act, screenshot, tabs, open, close, console.",
     "Use snapshot to get page content with element refs (e1, e2...).",
-    "Use act with a ref to interact: click, type, press, hover, drag, fill, select, wait, evaluate.",
+    "Use act with a ref to interact: click, type, press, hover, drag, fill, select, wait, evaluate, batch.",
+    "Use batch to run multiple actions atomically (e.g. fill form + submit). Pass actions=[{kind, ref, text, ...}].",
     "navigate and act return a snapshot automatically — no need to call snapshot separately.",
     "Refs reset on each new snapshot, so always use the latest refs.",
     "Set labels=true on snapshot/navigate to get a labeled screenshot alongside the snapshot.",
@@ -61,7 +65,7 @@ server.registerTool("browser", {
     "IMPORTANT: Invoke the /asm:browser-use skill before using this tool for the full browsing workflow.",
   ].join(" "),
   inputSchema: {
-    action: z.enum(["navigate", "snapshot", "act", "screenshot", "tabs", "open", "close"]).describe("The browser action to perform"),
+    action: z.enum(["navigate", "snapshot", "act", "screenshot", "tabs", "open", "close", "console"]).describe("The browser action to perform"),
     url: z.string().optional().describe("URL for navigate/open"),
     targetId: z.string().optional().describe("Target tab ID from tabs/open response"),
     maxChars: z.number().optional().describe("Max chars for snapshot (default 50000)"),
@@ -70,7 +74,7 @@ server.registerTool("browser", {
     compact: z.boolean().optional().describe("Remove empty structural elements from snapshot"),
     refsMode: z.enum(["aria", "role"]).optional().describe("Ref resolution mode: aria (default, fast) or role (semantic, SPA-resilient)"),
     labels: z.boolean().optional().describe("Include labeled screenshot with snapshot (overlays ref badges on elements)"),
-    kind: z.enum(["click", "type", "press", "hover", "drag", "fill", "select", "wait", "evaluate"]).optional().describe("Act sub-action kind"),
+    kind: z.enum(["click", "type", "press", "hover", "drag", "fill", "select", "wait", "evaluate", "batch"]).optional().describe("Act sub-action kind"),
     ref: z.string().optional().describe("Element ref from snapshot (e.g. e1, e2)"),
     text: z.string().optional().describe("Text for type/fill"),
     key: z.string().optional().describe("Key for press (e.g. Enter, Tab)"),
@@ -86,7 +90,11 @@ server.registerTool("browser", {
     timeMs: z.number().optional().describe("Wait duration in ms"),
     textGone: z.string().optional().describe("Wait for text to disappear"),
     fn: z.string().optional().describe("JavaScript for evaluate"),
-    timeoutMs: z.number().optional().describe("Timeout for wait actions"),
+    timeoutMs: z.number().optional().describe("Timeout in ms for navigate/wait (default 30000, range 1000-120000)"),
+    loadState: z.enum(["load", "domcontentloaded", "networkidle"]).optional().describe("Wait for load state in wait action"),
+    actions: z.array(z.record(z.string(), z.unknown())).optional().describe("Array of action objects for batch (each has kind, ref, text, etc.)"),
+    stopOnError: z.boolean().optional().describe("Stop batch on first error (default true)"),
+    level: z.enum(["log", "info", "warning", "error", "debug"]).optional().describe("Filter console logs by level"),
     fullPage: z.boolean().optional().describe("Full page screenshot"),
   },
 }, async (params) => {
@@ -99,19 +107,26 @@ server.registerTool("browser", {
         const url = params.url;
         if (!url) throw new Error("url is required for navigate");
 
+        const timeout = Math.max(1000, Math.min(120_000, params.timeoutMs ?? 30_000));
+        let warning: string | undefined;
+
         await ensureBrowser();
         let page;
         if (targetId) {
           page = getPage(targetId);
-          await page.goto(url, { waitUntil: "networkidle", timeout: 30000 });
+          await page.goto(url, { timeout }).catch(() => {
+            warning = "Navigation timed out, showing current page state";
+          });
         } else {
           const tabs = listTabs();
           if (tabs.length === 0) {
-            const tab = await openTab(url);
+            const tab = await openTab(url, timeout);
             page = tab.page;
           } else {
             page = getPage();
-            await page.goto(url, { waitUntil: "networkidle", timeout: 30000 });
+            await page.goto(url, { timeout }).catch(() => {
+              warning = "Navigation timed out, showing current page state";
+            });
           }
         }
 
@@ -143,6 +158,7 @@ server.registerTool("browser", {
                 action: "navigate",
                 targetId: tid,
                 ...info,
+                ...(warning ? { warning } : {}),
                 truncated: snap.truncated,
                 refsCount: Object.keys(snap.refs).length,
                 snapshot: snap.snapshot,
@@ -235,6 +251,9 @@ server.registerTool("browser", {
           url: params.url,
           fn: params.fn,
           timeoutMs: params.timeoutMs,
+          loadState: params.loadState,
+          actions: params.actions as ActRequest[] | undefined,
+          stopOnError: params.stopOnError,
         };
 
         const actResult = await executeAct(page, request);
@@ -393,13 +412,34 @@ server.registerTool("browser", {
         };
       }
 
+      case "console": {
+        await ensureBrowser();
+        const tid = targetId ?? getTargetId(getPage());
+        if (!tid) throw new Error("No active tab. Use action='open' to open a tab.");
+        const logs = getConsoleLogs(tid, params.level);
+        const errors = getPageErrors(tid);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                ok: true,
+                action: "console",
+                targetId: tid,
+                logs,
+                errors,
+              }, null, 2),
+            },
+          ],
+        };
+      }
+
       default:
         throw new Error(`Unknown action: ${action}`);
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
     return {
-      content: [{ type: "text" as const, text: `Error: ${message}` }],
+      content: [{ type: "text" as const, text: `Error: ${toAIFriendlyError(err)}` }],
       isError: true,
     };
   }

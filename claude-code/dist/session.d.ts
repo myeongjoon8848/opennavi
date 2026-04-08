@@ -4,8 +4,22 @@ export interface TabInfo {
     url: string;
     title: string;
 }
+export interface ConsoleEntry {
+    type: string;
+    text: string;
+    timestamp: number;
+    location?: string;
+}
+export interface PageErrorEntry {
+    message: string;
+    name?: string;
+    timestamp: number;
+}
+export declare function getConsoleLogs(targetId: string, level?: string): ConsoleEntry[];
+export declare function getPageErrors(targetId: string): PageErrorEntry[];
+export declare function clearConsoleLogs(targetId: string): void;
 export declare function ensureBrowser(): Promise<BrowserContext>;
-export declare function openTab(url?: string): Promise<{
+export declare function openTab(url?: string, timeoutMs?: number): Promise<{
     targetId: string;
     page: Page;
 }>;

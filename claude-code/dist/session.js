@@ -1,5 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.getConsoleLogs = getConsoleLogs;
+exports.getPageErrors = getPageErrors;
+exports.clearConsoleLogs = clearConsoleLogs;
 exports.ensureBrowser = ensureBrowser;
 exports.openTab = openTab;
 exports.getPage = getPage;
@@ -12,6 +15,48 @@ const playwright_core_1 = require("playwright-core");
 const node_os_1 = require("node:os");
 const promises_1 = require("node:fs/promises");
 const node_path_1 = require("node:path");
+const MAX_CONSOLE_ENTRIES = 500;
+const MAX_PAGE_ERRORS = 200;
+const consoleLogs = new Map();
+const pageErrors = new Map();
+function attachConsoleListeners(id, page) {
+    const logs = [];
+    const errors = [];
+    consoleLogs.set(id, logs);
+    pageErrors.set(id, errors);
+    page.on("console", (msg) => {
+        logs.push({
+            type: msg.type(),
+            text: msg.text(),
+            timestamp: Date.now(),
+            location: msg.location()?.url,
+        });
+        if (logs.length > MAX_CONSOLE_ENTRIES)
+            logs.shift();
+    });
+    page.on("pageerror", (error) => {
+        errors.push({
+            message: error.message,
+            name: error.name,
+            timestamp: Date.now(),
+        });
+        if (errors.length > MAX_PAGE_ERRORS)
+            errors.shift();
+    });
+}
+function getConsoleLogs(targetId, level) {
+    const logs = consoleLogs.get(targetId) ?? [];
+    if (!level)
+        return logs;
+    return logs.filter((entry) => entry.type === level);
+}
+function getPageErrors(targetId) {
+    return pageErrors.get(targetId) ?? [];
+}
+function clearConsoleLogs(targetId) {
+    consoleLogs.delete(targetId);
+    pageErrors.delete(targetId);
+}
 let browser = null;
 let context = null;
 let userDataDir = null;
@@ -31,18 +76,29 @@ async function ensureBrowser() {
     for (const page of existingPages) {
         const id = nextTargetId();
         pages.set(id, page);
-        page.once("close", () => pages.delete(id));
+        attachConsoleListeners(id, page);
+        page.once("close", () => {
+            pages.delete(id);
+            clearConsoleLogs(id);
+        });
     }
     return context;
 }
-async function openTab(url) {
+async function openTab(url, timeoutMs) {
     const ctx = await ensureBrowser();
     const page = await ctx.newPage();
     const id = nextTargetId();
     pages.set(id, page);
-    page.once("close", () => pages.delete(id));
+    attachConsoleListeners(id, page);
+    page.once("close", () => {
+        pages.delete(id);
+        clearConsoleLogs(id);
+    });
     if (url) {
-        await page.goto(url, { waitUntil: "networkidle", timeout: 30000 });
+        const timeout = Math.max(1000, Math.min(120_000, timeoutMs ?? 30_000));
+        await page.goto(url, { timeout }).catch(() => {
+            // Navigation may time out on slow sites, but the page is still usable
+        });
     }
     return { targetId: id, page };
 }
@@ -134,7 +190,19 @@ async function resolveTargetIdAfterNavigate(opts) {
         };
         let targetId = pickReplacement(listTabs());
         if (targetId === opts.oldTargetId && !pages.has(opts.oldTargetId)) {
-            await new Promise((r) => setTimeout(r, 800));
+            // Wait for a new page event instead of arbitrary sleep
+            if (context) {
+                try {
+                    await new Promise((resolve) => {
+                        const timeout = setTimeout(resolve, 2000);
+                        context.once("page", () => {
+                            clearTimeout(timeout);
+                            resolve();
+                        });
+                    });
+                }
+                catch { }
+            }
             targetId = pickReplacement(listTabs(), { allowSingleTabFallback: true });
         }
         return targetId;
