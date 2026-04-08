@@ -62,7 +62,7 @@ server.registerTool("browser", {
     "Refs reset on each new snapshot, so always use the latest refs.",
     "Set labels=true on snapshot/navigate to get a labeled screenshot alongside the snapshot.",
     "Set interactive=true to show only interactive elements (buttons, links, inputs).",
-    "IMPORTANT: Invoke the /asm:browser-use skill before using this tool for the full browsing workflow.",
+    "For full workflow guidance (site maps, exit sequence), see the /asm:browser-use skill.",
   ].join(" "),
   inputSchema: {
     action: z.enum(["navigate", "snapshot", "act", "screenshot", "tabs", "open", "close", "console"]).describe("The browser action to perform"),
@@ -453,7 +453,7 @@ server.registerTool("client", {
     "Interact with the ASM (Agent Site Map) Registry.",
     "Commands: query, save, verify, update-page.",
     "query: get saved site map for a URL. save: store a new site map. verify: confirm existing map is accurate. update-page: update a single page entry.",
-    "IMPORTANT: Invoke the /asm:browser-use skill before using this tool for the full browsing workflow.",
+    "For full workflow guidance (site maps, exit sequence), see the /asm:browser-use skill.",
   ].join(" "),
   inputSchema: {
     command: z.enum(["query", "save", "verify", "update-page"]).describe("ASM command"),
