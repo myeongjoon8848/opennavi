@@ -69,13 +69,18 @@ If a map exists, use `overview` for site-level context, and each page's `descrip
 
 ## Step 3: Observe Site Structure (New Sites Only)
 
-If the site map was empty, observe during browsing — you'll need this for Step 4a:
+If the site map was empty, observe during browsing — you'll need this for Step 4a.
 
-1. **Page types**: list, detail, search, form, dashboard
-2. **URL patterns**: e.g., `/search?q={query}`, `/articles/{slug}`
-3. **Selectors**: useful CSS selectors for content scoping
-4. **Navigation graph**: which pages link to which
-5. **Site-level info**: rendering method (SSR/SPA), auth, bot protection
+**Keep it minimal.** The site map is loaded into context on every revisit, so only store what saves meaningful browsing time. Details discoverable from a single snapshot (e.g., form fields, pagination params, board category IDs) should NOT be stored.
+
+**Store only:**
+1. **Overview** (1-2 sentences): SPA/SSR, auth required?, bot protection?
+2. **Page entries** — for each key page type, store only:
+   - `url`: URL pattern with placeholders (e.g., `/articles/{slug}`)
+   - `type`: list, detail, search, form, dashboard
+   - `description`: one line — the CSS selector for main content extraction, if not obvious
+
+**Do NOT store:** navigation graphs, search parameters, field mappings, pagination details, or anything that can be inferred from a live snapshot.
 
 ## Step 4: Exit Sequence (MANDATORY)
 
