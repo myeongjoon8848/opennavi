@@ -15,7 +15,14 @@ Before browsing, always check if there is a saved site map:
 client(command="query", url="https://example.com")
 ```
 
-If a map exists, use it for navigation. If it violates the storage rules in Step 3 (e.g., descriptions over 80 chars, CSS selectors, pagination details, category IDs), note it — you'll clean it up in Step 4. If no map exists, pay attention to site structure for Step 3.
+If a map exists, use it for navigation — but first check it against Step 3 rules. Set `needsCleanup = true` if ANY of these are true:
+- overview is more than 1 sentence
+- any description exceeds 80 chars
+- data contains CSS selectors, category IDs, pagination/search params, field mappings, or linksTo arrays
+
+If `needsCleanup`, you MUST `save` a rewritten version in Step 4 — do NOT `verify`.
+
+If no map exists, pay attention to site structure for Step 3.
 
 ## Step 2: Browse
 
@@ -89,10 +96,10 @@ After extracting the information you need, execute these three steps **in order*
 
 ### 4a. Save or verify site map
 
-- **New site**: `client(command="save", domain="...", json='{"overview":"...","pages":{...}}')`
-- **Returning site (data conforms to Step 3 rules)**: `client(command="verify", domain="...")`
-- **Returning site (data violates Step 3 rules)**: rewrite to conform, then `save` to overwrite
-- **Single page changed**: `client(command="update-page", domain="...", pageId="...", json='...')`
+- **New site**: `save` with data conforming to Step 3
+- **Returning site + `needsCleanup`**: rewrite the entire site map to conform to Step 3, then `save` to overwrite. This is **mandatory** — never `verify` non-conformant data.
+- **Returning site + data is clean**: `verify`
+- **Single page changed**: `update-page`
 
 ### 4b. Close browser
 
