@@ -17,9 +17,10 @@ client(command="query", url="https://example.com")
 
 The response contains:
 - `spec.rules` — **storage rules you must follow** when saving/updating (Step 3)
+- `violations` — list of rule violations in the existing record (empty array = compliant)
 - `record` — existing site map, or `null` if none
 
-If a record exists, use it for navigation — but note any violations of `spec.rules` for later (Step 3 will decide what to do).
+If a record exists, use it for navigation.
 
 ## Step 2: Browse
 
@@ -83,12 +84,12 @@ After extracting the information you need, execute these three steps **in order*
 
 ### 3a. Save or verify site map
 
-Re-evaluate the site map against `spec.rules` (from Step 1 response) **now** — do not rely on earlier impressions.
+Use `violations` from the Step 1 response to decide:
 
 - **New site** (record was null): `save` with data conforming to `spec.rules`.
-- **Returning site + record violates `spec.rules`**: rewrite the entire map to conform, then `save`.
-- **Returning site + record conforms**: `verify`.
-- **Single page changed**: `update-page`.
+- **`violations` is non-empty**: rewrite the entire map to conform to `spec.rules`, then `save`. **Do NOT verify.**
+- **`violations` is empty + no page changed**: `verify`.
+- **`violations` is empty + single page changed**: `update-page`.
 
 ```
 client(command="save", domain="example.com", json="{...}")
