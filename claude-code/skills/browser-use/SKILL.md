@@ -15,14 +15,11 @@ Before browsing, always check if there is a saved site map:
 client(command="query", url="https://example.com")
 ```
 
-If a map exists, use it for navigation — but first check it against Step 3 rules. Set `needsCleanup = true` if ANY of these are true:
-- overview is more than 1 sentence
-- any description exceeds 80 chars
-- data contains CSS selectors, category IDs, pagination/search params, field mappings, or linksTo arrays
+The response contains:
+- `spec.rules` — **storage rules you must follow** when saving/updating (Step 3)
+- `record` — existing site map, or `null` if none
 
-If `needsCleanup`, you MUST `save` a rewritten version in Step 4 — do NOT `verify`.
-
-If no map exists, pay attention to site structure for Step 3.
+If a record exists, use it for navigation — but note any violations of `spec.rules` for later (Step 3 will decide what to do).
 
 ## Step 2: Browse
 
@@ -66,6 +63,8 @@ If no map exists, pay attention to site structure for Step 3.
 - **Form filling**: `browser(action="act", kind="fill", fields=[{ref: "e10", value: "John"}, ...])`
 - **Large pages**: `browser(action="snapshot", selector=".main-content")`
 - **JS extraction**: `browser(action="act", kind="evaluate", fn="document.title")`
+- **Visual debugging**: `browser(action="snapshot", labels=true)` — overlays ref badges on a screenshot alongside the snapshot
+- **Faster snapshots**: `browser(action="snapshot", interactive=true)` — returns only interactive elements (buttons, links, inputs)
 
 ### Error Recovery
 
@@ -74,40 +73,36 @@ If no map exists, pay attention to site structure for Step 3.
 | Ref not found | DOM changed — take a new snapshot |
 | Element not interactable | Dismiss overlay, or scroll into view |
 | Navigation timeout | Page likely loaded — check the returned snapshot |
+| Snapshot truncated | Use `selector` to scope a section, or set `interactive=true` |
 | Blocked by bot protection | Wait 5s then retry, or stop and report |
 | JS errors | Use `console` action to inspect logs |
 
-## Step 3: Site Map Storage Rules
-
-The site map is loaded into context on **every** revisit. Every extra byte wastes tokens.
-
-**Overview**: 1 sentence max. Only: SPA/SSR, auth, bot protection.
-
-**Pages**: only key page types. Each page has:
-- `url`: pattern with placeholders (`/articles/{slug}`)
-- `type`: list | detail | search | form | dashboard
-- `description`: **≤80 chars**. What the page is, nothing more.
-
-**NEVER store**: CSS selectors, category/board IDs, pagination params, search params, field mappings, nested resource lists, implementation details. All of these are discoverable from a live snapshot.
-
-## Step 4: Exit Sequence (MANDATORY)
+## Step 3: Exit Sequence (MANDATORY)
 
 After extracting the information you need, execute these three steps **in order**.
 
-### 4a. Save or verify site map
+### 3a. Save or verify site map
 
-- **New site**: `save` with data conforming to Step 3
-- **Returning site + `needsCleanup`**: rewrite the entire site map to conform to Step 3, then `save` to overwrite. This is **mandatory** — never `verify` non-conformant data.
-- **Returning site + data is clean**: `verify`
-- **Single page changed**: `update-page`
+Re-evaluate the site map against `spec.rules` (from Step 1 response) **now** — do not rely on earlier impressions.
 
-### 4b. Close browser
+- **New site** (record was null): `save` with data conforming to `spec.rules`.
+- **Returning site + record violates `spec.rules`**: rewrite the entire map to conform, then `save`.
+- **Returning site + record conforms**: `verify`.
+- **Single page changed**: `update-page`.
+
+```
+client(command="save", domain="example.com", json="{...}")
+client(command="verify", domain="example.com")
+client(command="update-page", domain="example.com", pageId="product-list", json="{...}")
+```
+
+### 3b. Close browser
 
 ```
 browser(action="close")
 ```
 
-### 4c. Report results
+### 3c. Report results
 
 Include `[site-map: saved]` or `[site-map: verified]` at the end of the response.
 
