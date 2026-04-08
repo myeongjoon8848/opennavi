@@ -15,7 +15,7 @@ Before browsing, always check if there is a saved site map:
 client(command="query", url="https://example.com")
 ```
 
-If a map exists, use `overview` for site-level context, and each page's `description` for selectors, URL patterns, and tips. If no map exists (empty response), pay extra attention to site structure (see Step 3).
+If a map exists, use it for navigation. If it violates the storage rules in Step 3 (e.g., descriptions over 80 chars, CSS selectors, pagination details, category IDs), note it — you'll clean it up in Step 4. If no map exists, pay attention to site structure for Step 3.
 
 ## Step 2: Browse
 
@@ -30,13 +30,14 @@ If a map exists, use `overview` for site-level context, and each page's `descrip
 
 | Action | Purpose | Key Params |
 |---|---|---|
-| navigate | Go to URL | url |
+| navigate | Go to URL | url, timeoutMs |
 | snapshot | Get page content | maxChars, selector |
 | act | Interact with element | kind, ref, text, key, ... |
 | screenshot | Capture image | fullPage, ref, selector |
 | tabs | List open tabs | — |
 | open | New tab | url |
 | close | Close tab/browser | targetId |
+| console | Get console logs/errors | level, targetId |
 
 ### Act Kinds
 
@@ -49,8 +50,9 @@ If a map exists, use `overview` for site-level context, and each page's `descrip
 | drag | Drag and drop | startRef, endRef |
 | fill | Fill multiple fields | fields: [{ref, value}] |
 | select | Select option | ref, values |
-| wait | Wait for condition | text, textGone, url, timeMs |
+| wait | Wait for condition | text, textGone, url, loadState, timeMs |
 | evaluate | Run JavaScript | fn |
+| batch | Run multiple actions | actions: [{kind, ref, ...}], stopOnError |
 
 ### Tips
 
@@ -63,24 +65,23 @@ If a map exists, use `overview` for site-level context, and each page's `descrip
 | Problem | Solution |
 |---------|----------|
 | Ref not found | DOM changed — take a new snapshot |
-| Element not interactable | Dismiss overlay, or hover to scroll into view |
-| Navigation timeout | Take a screenshot to diagnose |
-| Blocked by bot protection | Wait 5s then retry, or stop and report the issue |
+| Element not interactable | Dismiss overlay, or scroll into view |
+| Navigation timeout | Page likely loaded — check the returned snapshot |
+| Blocked by bot protection | Wait 5s then retry, or stop and report |
+| JS errors | Use `console` action to inspect logs |
 
-## Step 3: Observe Site Structure (New Sites Only)
+## Step 3: Site Map Storage Rules
 
-If the site map was empty, observe during browsing — you'll need this for Step 4a.
+The site map is loaded into context on **every** revisit. Every extra byte wastes tokens.
 
-**Keep it minimal.** The site map is loaded into context on every revisit, so only store what saves meaningful browsing time. Details discoverable from a single snapshot (e.g., form fields, pagination params, board category IDs) should NOT be stored.
+**Overview**: 1 sentence max. Only: SPA/SSR, auth, bot protection.
 
-**Store only:**
-1. **Overview** (1-2 sentences): SPA/SSR, auth required?, bot protection?
-2. **Page entries** — for each key page type, store only:
-   - `url`: URL pattern with placeholders (e.g., `/articles/{slug}`)
-   - `type`: list, detail, search, form, dashboard
-   - `description`: one line — the CSS selector for main content extraction, if not obvious
+**Pages**: only key page types. Each page has:
+- `url`: pattern with placeholders (`/articles/{slug}`)
+- `type`: list | detail | search | form | dashboard
+- `description`: **≤80 chars**. What the page is, nothing more.
 
-**Do NOT store:** navigation graphs, search parameters, field mappings, pagination details, or anything that can be inferred from a live snapshot.
+**NEVER store**: CSS selectors, category/board IDs, pagination params, search params, field mappings, nested resource lists, implementation details. All of these are discoverable from a live snapshot.
 
 ## Step 4: Exit Sequence (MANDATORY)
 
@@ -88,10 +89,10 @@ After extracting the information you need, execute these three steps **in order*
 
 ### 4a. Save or verify site map
 
-- **New site**: `client(command="save", domain="example.com", json='{"overview": "...", "pages": {...}}')`
-- **Returning site (accurate)**: `client(command="verify", domain="example.com")`
-- **Returning site (inaccurate)**: use `save` to overwrite
-- **Single page changed**: `client(command="update-page", domain="example.com", pageId="search", json='...')`
+- **New site**: `client(command="save", domain="...", json='{"overview":"...","pages":{...}}')`
+- **Returning site (data conforms to Step 3 rules)**: `client(command="verify", domain="...")`
+- **Returning site (data violates Step 3 rules)**: rewrite to conform, then `save` to overwrite
+- **Single page changed**: `client(command="update-page", domain="...", pageId="...", json='...')`
 
 ### 4b. Close browser
 
