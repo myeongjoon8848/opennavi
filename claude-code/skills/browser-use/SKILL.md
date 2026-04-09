@@ -11,7 +11,7 @@ Use the `browser` and `client` tools to navigate websites, extract information, 
 
 ## Step 1: Check Site Map
 
-Before browsing a domain, **always** call `query` first:
+Before your first browse, call `query` to get storage rules and check for an existing site map:
 
 ```
 client(command="query", url="https://example.com")
@@ -24,7 +24,7 @@ The response contains:
 
 If a record exists, use it for navigation.
 
-**This applies to every new domain you browse, not just the first one.** If you discover the actual target is on a different domain (e.g., a redirect or a link from search results), call `query` for that domain before navigating it. Skip only transient utility sites (search engines, CAPTCHA solvers) that you pass through without extracting information.
+**Auto-detect on navigate:** When you `navigate` to a new domain, the browser automatically checks the registry. If a site map exists, the response includes `siteMapAvailable: true` with a hint. Call `client(command="query")` to get the full map, storage rules, and violations — you need these for efficient navigation and the exit sequence (Step 3).
 
 ## Step 2: Browse
 

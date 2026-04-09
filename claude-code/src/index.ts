@@ -45,6 +45,17 @@ async function getPageInfo(page: Awaited<ReturnType<typeof getPage>>) {
 // Track last snapshot refs for labeled screenshots
 let lastSnapshotRefs: RoleRefMap = {};
 
+// Track queried domains to auto-query on new domain navigate
+const queriedDomains = new Set<string>();
+
+function extractDomainFromUrl(url: string): string | null {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return null;
+  }
+}
+
 const server = new McpServer({
   name: "browser-mcp",
   version: "2.0.0",
@@ -58,7 +69,7 @@ server.registerTool("browser", {
     "Use snapshot to get page content with element refs (e1, e2...).",
     "Use act with a ref to interact: click, type, press, hover, drag, fill, select, wait, evaluate, batch.",
     "Use batch to run multiple actions atomically (e.g. fill form + submit). Pass actions=[{kind, ref, text, ...}].",
-    "navigate and act return a snapshot automatically — no need to call snapshot separately.",
+    "navigate and act return a snapshot automatically — no need to call snapshot separately. navigate checks the OpenNavi registry on new domains — if a site map exists, siteMapAvailable=true appears in the response; call client(query) to get the full map.",
     "Refs reset on each new snapshot, so always use the latest refs.",
     "Set labels=true on snapshot/navigate to get a labeled screenshot alongside the snapshot.",
     "Set interactive=true to show only interactive elements (buttons, links, inputs).",
@@ -149,6 +160,22 @@ server.registerTool("browser", {
         });
         lastSnapshotRefs = snap.refs;
 
+        // Auto-check OpenNavi registry for new domains
+        let siteMapHint: { siteMapAvailable: boolean; domain: string } | undefined;
+        const navigatedDomain = extractDomainFromUrl(url);
+        if (navigatedDomain && !queriedDomains.has(navigatedDomain)) {
+          queriedDomains.add(navigatedDomain);
+          try {
+            const raw = await naviQuery(url);
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              if (parsed.record) {
+                siteMapHint = { siteMapAvailable: true, domain: navigatedDomain };
+              }
+            }
+          } catch {}
+        }
+
         const content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }> = [
           {
             type: "text" as const,
@@ -159,6 +186,7 @@ server.registerTool("browser", {
                 targetId: tid,
                 ...info,
                 ...(warning ? { warning } : {}),
+                ...(siteMapHint ? { siteMapAvailable: true, siteMapHint: `Site map exists for ${siteMapHint.domain}. Call client(command="query", url="...") to get the full map and storage rules.` } : {}),
                 truncated: snap.truncated,
                 refsCount: Object.keys(snap.refs).length,
                 snapshot: snap.snapshot,
