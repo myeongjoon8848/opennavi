@@ -6,7 +6,6 @@
     "node": ">=18.0.0"
   },
   "scripts": {
-    "postinstall": "node scripts/patch-playwright.js",
     "build": "tsc",
     "start": "node dist/index.js"
   },

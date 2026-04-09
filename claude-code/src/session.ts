@@ -476,8 +476,16 @@ async function connectBrowserInternal(): Promise<BrowserContext> {
     browser = null;
   });
 
-  // Use the first existing context (user's real session)
-  context = browser.contexts()[0] ?? await browser.newContext();
+  // Use the first existing context (user's real session).
+  // Never call browser.newContext() — it triggers Browser.setDownloadBehavior
+  // which Chrome 147+ no longer supports for CDP-attached browsers.
+  const contexts = browser.contexts();
+  if (contexts.length === 0) {
+    throw new BrowserConnectionError(
+      "Chrome에 연결했지만 브라우저 컨텍스트가 없습니다. Chrome을 재시작한 후 다시 시도해주세요.",
+    );
+  }
+  context = contexts[0]!;
 
   registerExistingPages();
 
