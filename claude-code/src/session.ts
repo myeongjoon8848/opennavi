@@ -111,12 +111,55 @@ let chromeProcess: ChildProcess | null = null;
 async function isCdpReachable(): Promise<boolean> {
   try {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 1000);
+    const timer = setTimeout(() => ctrl.abort(), 2000);
     const res = await fetch(`${CDP_URL}/json/version`, { signal: ctrl.signal });
     clearTimeout(timer);
     return res.ok;
   } catch {
     return false;
+  }
+}
+
+/** Check if Chrome is already running (macOS/Linux) */
+function isChromeAlreadyRunning(): boolean {
+  try {
+    const out = execFileSync("pgrep", ["-x", "Google Chrome"], {
+      encoding: "utf8",
+      timeout: 1000,
+    }).trim();
+    return out.length > 0;
+  } catch {
+    // pgrep returns exit 1 if no match — that's fine
+  }
+  // Fallback: also check common Linux/Windows names
+  try {
+    const out = execFileSync("pgrep", ["-f", "chrome|chromium|brave|msedge"], {
+      encoding: "utf8",
+      timeout: 1000,
+    }).trim();
+    return out.length > 0;
+  } catch {}
+  return false;
+}
+
+/** Quit Chrome gracefully on macOS via AppleScript, or kill on Linux */
+async function quitChrome(): Promise<void> {
+  if (process.platform === "darwin") {
+    try {
+      execFileSync("osascript", ["-e", 'tell application "Google Chrome" to quit'], {
+        timeout: 5000,
+      });
+    } catch {}
+  } else {
+    try {
+      execFileSync("pkill", ["-f", "chrome|chromium|brave|msedge"], { timeout: 3000 });
+    } catch {}
+  }
+  // Wait for Chrome to fully exit
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    if (!isChromeAlreadyRunning()) return;
+    await new Promise((r) => setTimeout(r, 300));
   }
 }
 
@@ -131,14 +174,24 @@ async function launchChromeWithCdp(): Promise<void> {
         "Chrome을 찾을 수 없습니다.",
         "",
         "Chrome, Brave, 또는 Edge를 설치해주세요.",
-        "또는 직접 CDP 포트와 함께 실행해주세요:",
-        process.platform === "darwin"
-          ? '  open -a "Google Chrome" --args --remote-debugging-port=9222'
-          : process.platform === "win32"
-            ? "  start chrome --remote-debugging-port=9222"
-            : "  google-chrome --remote-debugging-port=9222",
       ].join("\n"),
     );
+  }
+
+  // macOS single-instance problem: if Chrome is already running without CDP,
+  // a second launch just opens a new window and ignores --remote-debugging-port.
+  // We must quit Chrome first, then relaunch with CDP.
+  if (isChromeAlreadyRunning()) {
+    await quitChrome();
+    // If Chrome still running after quit attempt, error out
+    if (isChromeAlreadyRunning()) {
+      throw new Error(
+        [
+          "Chrome이 이미 실행 중이라 CDP 포트를 열 수 없습니다.",
+          "Chrome을 수동으로 종료한 후 다시 시도해주세요.",
+        ].join("\n"),
+      );
+    }
   }
 
   const args = [
@@ -158,19 +211,17 @@ async function launchChromeWithCdp(): Promise<void> {
   // Detach so Chrome survives if our process exits
   chromeProcess.unref();
 
-  // Wait for CDP to become reachable (up to 10s)
-  const deadline = Date.now() + 10_000;
+  // Wait for CDP to become reachable (up to 15s — Chrome can be slow on first start)
+  const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
     if (await isCdpReachable()) return;
-    await new Promise((r) => setTimeout(r, 300));
+    await new Promise((r) => setTimeout(r, 500));
   }
 
   throw new Error(
     [
       `Chrome을 실행했지만 CDP 포트(${CDP_PORT})에 연결할 수 없습니다.`,
       `실행 경로: ${exe.path}`,
-      "",
-      "Chrome이 이미 CDP 포트 없이 실행 중이면, 먼저 Chrome을 종료한 후 다시 시도해주세요.",
     ].join("\n"),
   );
 }
