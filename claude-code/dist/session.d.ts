@@ -15,9 +15,21 @@ export interface PageErrorEntry {
     name?: string;
     timestamp: number;
 }
+export interface NetworkRequestEntry {
+    id: string;
+    method: string;
+    url: string;
+    resourceType?: string;
+    status?: number;
+    ok?: boolean;
+    failureText?: string;
+    timestamp: number;
+}
 export declare function getConsoleLogs(targetId: string, level?: string): ConsoleEntry[];
 export declare function getPageErrors(targetId: string): PageErrorEntry[];
-export declare function clearConsoleLogs(targetId: string): void;
+export declare function getNetworkRequests(targetId: string): NetworkRequestEntry[];
+export declare function clearPageState(targetId: string): void;
+export declare function getContext(): BrowserContext | null;
 export declare function ensureBrowser(): Promise<BrowserContext>;
 export declare function openTab(url?: string, timeoutMs?: number): Promise<{
     targetId: string;

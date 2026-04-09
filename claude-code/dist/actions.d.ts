@@ -1,5 +1,5 @@
 import type { Page } from "playwright-core";
-export type ActKind = "click" | "type" | "press" | "hover" | "drag" | "fill" | "select" | "wait" | "evaluate" | "batch";
+export type ActKind = "click" | "type" | "press" | "hover" | "drag" | "fill" | "select" | "wait" | "evaluate" | "batch" | "scrollIntoView" | "armDialog" | "waitForDownload" | "download" | "responseBody";
 export interface ActRequest {
     kind: ActKind;
     ref?: string;
@@ -26,5 +26,11 @@ export interface ActRequest {
     loadState?: "load" | "domcontentloaded" | "networkidle";
     actions?: ActRequest[];
     stopOnError?: boolean;
+    delayMs?: number;
+    accept?: boolean;
+    promptText?: string;
+    path?: string;
+    urlPattern?: string;
+    maxChars?: number;
 }
-export declare function executeAct(page: Page, request: ActRequest): Promise<unknown>;
+export declare function executeAct(page: Page, request: ActRequest, depth?: number): Promise<unknown>;

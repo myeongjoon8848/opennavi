@@ -1,5 +1,6 @@
 import type { Page } from "playwright-core";
 import { type RoleRefMap, type SnapshotOptions } from "./refs.js";
+export type SnapshotMode = "normal" | "efficient";
 export interface SnapshotResult {
     snapshot: string;
     truncated: boolean;
@@ -8,4 +9,5 @@ export interface SnapshotResult {
 export declare function takeSnapshot(page: Page, opts?: SnapshotOptions & {
     targetId?: string;
     refsMode?: "role" | "aria";
+    mode?: SnapshotMode;
 }): Promise<SnapshotResult>;

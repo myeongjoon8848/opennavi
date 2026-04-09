@@ -7,7 +7,15 @@ import {
   type SnapshotOptions,
 } from "./refs.js";
 
+// ---------------------------------------------------------------------------
+// Snapshot constants (ported from OpenClaw constants.ts)
+// ---------------------------------------------------------------------------
+
 const DEFAULT_MAX_CHARS = 50_000;
+const EFFICIENT_MAX_CHARS = 10_000;
+const EFFICIENT_MAX_DEPTH = 6;
+
+export type SnapshotMode = "normal" | "efficient";
 
 export interface SnapshotResult {
   snapshot: string;
@@ -25,14 +33,16 @@ function truncate(text: string, maxChars: number): { text: string; truncated: bo
 
 export async function takeSnapshot(
   page: Page,
-  opts?: SnapshotOptions & { targetId?: string; refsMode?: "role" | "aria" },
+  opts?: SnapshotOptions & { targetId?: string; refsMode?: "role" | "aria"; mode?: SnapshotMode },
 ): Promise<SnapshotResult> {
-  const maxChars = opts?.maxChars ?? DEFAULT_MAX_CHARS;
+  // Efficient mode: smaller snapshot for LLM context savings
+  const isEfficient = opts?.mode === "efficient";
+  const maxChars = opts?.maxChars ?? (isEfficient ? EFFICIENT_MAX_CHARS : DEFAULT_MAX_CHARS);
   const refsMode = opts?.refsMode ?? "aria";
   const snapshotOpts: SnapshotOptions = {
-    interactive: opts?.interactive,
-    compact: opts?.compact,
-    maxDepth: opts?.maxDepth,
+    interactive: isEfficient ? true : opts?.interactive,
+    compact: isEfficient ? true : opts?.compact,
+    maxDepth: opts?.maxDepth ?? (isEfficient ? EFFICIENT_MAX_DEPTH : undefined),
   };
 
   let rawSnapshot: string;

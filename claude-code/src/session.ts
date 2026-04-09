@@ -1,7 +1,11 @@
-import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
-import { tmpdir } from "node:os";
-import { mkdtemp, rm } from "node:fs/promises";
+import { chromium, type Browser, type BrowserContext, type Page, type Request, type Response } from "playwright-core";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { resolveUserDataDir, buildStealthLaunchArgs, applyStealthScripts, pickUserAgent } from "./stealth.js";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
 export interface TabInfo {
   targetId: string;
@@ -22,16 +26,42 @@ export interface PageErrorEntry {
   timestamp: number;
 }
 
+export interface NetworkRequestEntry {
+  id: string;
+  method: string;
+  url: string;
+  resourceType?: string;
+  status?: number;
+  ok?: boolean;
+  failureText?: string;
+  timestamp: number;
+}
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
 const MAX_CONSOLE_ENTRIES = 500;
 const MAX_PAGE_ERRORS = 200;
+const MAX_NETWORK_REQUESTS = 500;
+
+// ---------------------------------------------------------------------------
+// Per-tab state
+// ---------------------------------------------------------------------------
+
 const consoleLogs = new Map<string, ConsoleEntry[]>();
 const pageErrors = new Map<string, PageErrorEntry[]>();
+const networkRequests = new Map<string, NetworkRequestEntry[]>();
+const requestIds = new WeakMap<Request, string>();
+let requestCounter = 0;
 
-function attachConsoleListeners(id: string, page: Page): void {
+function attachPageListeners(id: string, page: Page): void {
   const logs: ConsoleEntry[] = [];
   const errors: PageErrorEntry[] = [];
+  const requests: NetworkRequestEntry[] = [];
   consoleLogs.set(id, logs);
   pageErrors.set(id, errors);
+  networkRequests.set(id, requests);
 
   page.on("console", (msg) => {
     logs.push({
@@ -51,7 +81,53 @@ function attachConsoleListeners(id: string, page: Page): void {
     });
     if (errors.length > MAX_PAGE_ERRORS) errors.shift();
   });
+
+  page.on("request", (req: Request) => {
+    requestCounter++;
+    const rid = `r${requestCounter}`;
+    requestIds.set(req, rid);
+    requests.push({
+      id: rid,
+      method: req.method(),
+      url: req.url(),
+      resourceType: req.resourceType(),
+      timestamp: Date.now(),
+    });
+    if (requests.length > MAX_NETWORK_REQUESTS) requests.shift();
+  });
+
+  page.on("response", (resp: Response) => {
+    const req = resp.request();
+    const rid = requestIds.get(req);
+    if (!rid) return;
+    const entry = findRequestById(requests, rid);
+    if (entry) {
+      entry.status = resp.status();
+      entry.ok = resp.ok();
+    }
+  });
+
+  page.on("requestfailed", (req: Request) => {
+    const rid = requestIds.get(req);
+    if (!rid) return;
+    const entry = findRequestById(requests, rid);
+    if (entry) {
+      entry.failureText = req.failure()?.errorText;
+      entry.ok = false;
+    }
+  });
 }
+
+function findRequestById(requests: NetworkRequestEntry[], id: string): NetworkRequestEntry | undefined {
+  for (let i = requests.length - 1; i >= 0; i--) {
+    if (requests[i]!.id === id) return requests[i];
+  }
+  return undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Accessors
+// ---------------------------------------------------------------------------
 
 export function getConsoleLogs(targetId: string, level?: string): ConsoleEntry[] {
   const logs = consoleLogs.get(targetId) ?? [];
@@ -63,10 +139,19 @@ export function getPageErrors(targetId: string): PageErrorEntry[] {
   return pageErrors.get(targetId) ?? [];
 }
 
-export function clearConsoleLogs(targetId: string): void {
+export function getNetworkRequests(targetId: string): NetworkRequestEntry[] {
+  return networkRequests.get(targetId) ?? [];
+}
+
+export function clearPageState(targetId: string): void {
   consoleLogs.delete(targetId);
   pageErrors.delete(targetId);
+  networkRequests.delete(targetId);
 }
+
+// ---------------------------------------------------------------------------
+// Browser lifecycle
+// ---------------------------------------------------------------------------
 
 let browser: Browser | null = null;
 let context: BrowserContext | null = null;
@@ -78,28 +163,56 @@ function nextTargetId(): string {
   return `tab-${++tabCounter}`;
 }
 
+export function getContext(): BrowserContext | null {
+  return context;
+}
+
 export async function ensureBrowser(): Promise<BrowserContext> {
   if (context && browser?.isConnected()) return context;
 
   await closeBrowser();
 
-  userDataDir = await mkdtemp(join(tmpdir(), "browser-mcp-"));
-  browser = await chromium.launch({ headless: false });
-  context = await browser.newContext();
+  // Persistent profile directory
+  userDataDir = resolveUserDataDir("default");
+  mkdirSync(userDataDir, { recursive: true });
+
+  const stealthArgs = buildStealthLaunchArgs();
+  const userAgent = pickUserAgent();
+
+  browser = await chromium.launch({
+    headless: false,
+    args: stealthArgs,
+  });
+
+  context = await browser.newContext({
+    userAgent,
+    viewport: { width: 1280, height: 800 },
+    locale: "en-US",
+    timezoneId: "America/New_York",
+    // Bypass Content-Security-Policy to allow our init scripts
+    bypassCSP: true,
+  });
+
+  // Apply stealth scripts before any navigation
+  await applyStealthScripts(context);
 
   const existingPages = context.pages();
   for (const page of existingPages) {
     const id = nextTargetId();
     pages.set(id, page);
-    attachConsoleListeners(id, page);
+    attachPageListeners(id, page);
     page.once("close", () => {
       pages.delete(id);
-      clearConsoleLogs(id);
+      clearPageState(id);
     });
   }
 
   return context;
 }
+
+// ---------------------------------------------------------------------------
+// Tab management
+// ---------------------------------------------------------------------------
 
 export async function openTab(
   url?: string,
@@ -109,10 +222,10 @@ export async function openTab(
   const page = await ctx.newPage();
   const id = nextTargetId();
   pages.set(id, page);
-  attachConsoleListeners(id, page);
+  attachPageListeners(id, page);
   page.once("close", () => {
     pages.delete(id);
-    clearConsoleLogs(id);
+    clearPageState(id);
   });
 
   if (url) {
@@ -176,15 +289,14 @@ export async function closeBrowser(): Promise<void> {
   try { await browser?.close(); } catch {}
   context = null;
   browser = null;
-
-  if (userDataDir) {
-    try { await rm(userDataDir, { recursive: true, force: true }); } catch {}
-    userDataDir = null;
-  }
+  // NOTE: we do NOT delete userDataDir for persistent profiles
+  userDataDir = null;
   tabCounter = 0;
 }
 
-// --- SPA Navigation Recovery ---
+// ---------------------------------------------------------------------------
+// SPA Navigation Recovery
+// ---------------------------------------------------------------------------
 
 export async function resolveTargetIdAfterNavigate(opts: {
   oldTargetId: string;
@@ -210,7 +322,6 @@ export async function resolveTargetIdAfterNavigate(opts: {
 
     let targetId = pickReplacement(listTabs());
     if (targetId === opts.oldTargetId && !pages.has(opts.oldTargetId)) {
-      // Wait for a new page event instead of arbitrary sleep
       if (context) {
         try {
           await new Promise<void>((resolve) => {

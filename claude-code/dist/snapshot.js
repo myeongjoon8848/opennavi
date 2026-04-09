@@ -2,7 +2,12 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.takeSnapshot = takeSnapshot;
 const refs_js_1 = require("./refs.js");
+// ---------------------------------------------------------------------------
+// Snapshot constants (ported from OpenClaw constants.ts)
+// ---------------------------------------------------------------------------
 const DEFAULT_MAX_CHARS = 50_000;
+const EFFICIENT_MAX_CHARS = 10_000;
+const EFFICIENT_MAX_DEPTH = 6;
 function truncate(text, maxChars) {
     if (text.length <= maxChars)
         return { text, truncated: false };
@@ -12,12 +17,14 @@ function truncate(text, maxChars) {
     };
 }
 async function takeSnapshot(page, opts) {
-    const maxChars = opts?.maxChars ?? DEFAULT_MAX_CHARS;
+    // Efficient mode: smaller snapshot for LLM context savings
+    const isEfficient = opts?.mode === "efficient";
+    const maxChars = opts?.maxChars ?? (isEfficient ? EFFICIENT_MAX_CHARS : DEFAULT_MAX_CHARS);
     const refsMode = opts?.refsMode ?? "aria";
     const snapshotOpts = {
-        interactive: opts?.interactive,
-        compact: opts?.compact,
-        maxDepth: opts?.maxDepth,
+        interactive: isEfficient ? true : opts?.interactive,
+        compact: isEfficient ? true : opts?.compact,
+        maxDepth: opts?.maxDepth ?? (isEfficient ? EFFICIENT_MAX_DEPTH : undefined),
     };
     let rawSnapshot;
     let refs;
