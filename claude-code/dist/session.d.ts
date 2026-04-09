@@ -32,8 +32,8 @@ export declare function clearPageState(targetId: string): void;
 export declare function getContext(): BrowserContext | null;
 /**
  * Connect to the user's Chrome via CDP.
- * Chrome must be running with --remote-debugging-port=9222.
- * Retries up to 3 times with backoff.
+ * If Chrome is not running, auto-launch it with --remote-debugging-port.
+ * Retries connection up to 3 times with backoff.
  */
 export declare function ensureBrowser(): Promise<BrowserContext>;
 export declare function openTab(url?: string, timeoutMs?: number): Promise<{

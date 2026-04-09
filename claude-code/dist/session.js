@@ -14,10 +14,124 @@ exports.closeTab = closeTab;
 exports.closeBrowser = closeBrowser;
 exports.resolveTargetIdAfterNavigate = resolveTargetIdAfterNavigate;
 const playwright_core_1 = require("playwright-core");
+const node_child_process_1 = require("node:child_process");
+const node_fs_1 = require("node:fs");
+const node_os_1 = require("node:os");
+const node_path_1 = require("node:path");
 // ---------------------------------------------------------------------------
-// CDP endpoint configuration
+// CDP configuration
 // ---------------------------------------------------------------------------
-const CDP_URL = process.env.BROWSER_CDP_URL || "http://127.0.0.1:9222";
+const CDP_PORT = Number(process.env.BROWSER_CDP_PORT) || 9222;
+const CDP_URL = process.env.BROWSER_CDP_URL || `http://127.0.0.1:${CDP_PORT}`;
+function findChromeExecutable() {
+    if (process.platform === "darwin") {
+        const candidates = [
+            { kind: "chrome", path: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" },
+            { kind: "chrome", path: (0, node_path_1.join)((0, node_os_1.homedir)(), "Applications/Google Chrome.app/Contents/MacOS/Google Chrome") },
+            { kind: "brave", path: "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser" },
+            { kind: "edge", path: "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge" },
+            { kind: "chromium", path: "/Applications/Chromium.app/Contents/MacOS/Chromium" },
+        ];
+        for (const c of candidates) {
+            if ((0, node_fs_1.existsSync)(c.path))
+                return c;
+        }
+    }
+    if (process.platform === "linux") {
+        const names = [
+            "google-chrome", "google-chrome-stable", "brave-browser",
+            "microsoft-edge", "chromium", "chromium-browser",
+        ];
+        for (const name of names) {
+            try {
+                const resolved = (0, node_child_process_1.execFileSync)("which", [name], { encoding: "utf8", timeout: 1000 }).trim();
+                if (resolved) {
+                    const kind = name.includes("brave") ? "brave"
+                        : name.includes("edge") ? "edge"
+                            : name.includes("chromium") ? "chromium"
+                                : "chrome";
+                    return { kind, path: resolved };
+                }
+            }
+            catch { }
+        }
+    }
+    if (process.platform === "win32") {
+        const candidates = [
+            { kind: "chrome", path: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" },
+            { kind: "chrome", path: "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe" },
+            { kind: "edge", path: "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe" },
+            { kind: "brave", path: "C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe" },
+        ];
+        for (const c of candidates) {
+            if ((0, node_fs_1.existsSync)(c.path))
+                return c;
+        }
+    }
+    return null;
+}
+// ---------------------------------------------------------------------------
+// Chrome auto-launch with CDP port
+// ---------------------------------------------------------------------------
+let chromeProcess = null;
+async function isCdpReachable() {
+    try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 1000);
+        const res = await fetch(`${CDP_URL}/json/version`, { signal: ctrl.signal });
+        clearTimeout(timer);
+        return res.ok;
+    }
+    catch {
+        return false;
+    }
+}
+async function launchChromeWithCdp() {
+    // Already reachable? Skip launch.
+    if (await isCdpReachable())
+        return;
+    const exe = findChromeExecutable();
+    if (!exe) {
+        throw new Error([
+            "Chrome을 찾을 수 없습니다.",
+            "",
+            "Chrome, Brave, 또는 Edge를 설치해주세요.",
+            "또는 직접 CDP 포트와 함께 실행해주세요:",
+            process.platform === "darwin"
+                ? '  open -a "Google Chrome" --args --remote-debugging-port=9222'
+                : process.platform === "win32"
+                    ? "  start chrome --remote-debugging-port=9222"
+                    : "  google-chrome --remote-debugging-port=9222",
+        ].join("\n"));
+    }
+    const args = [
+        `--remote-debugging-port=${CDP_PORT}`,
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-session-crashed-bubble",
+        "--hide-crash-restore-bubble",
+    ];
+    chromeProcess = (0, node_child_process_1.spawn)(exe.path, args, {
+        stdio: ["ignore", "ignore", "pipe"],
+        detached: true,
+        env: { ...process.env, HOME: (0, node_os_1.homedir)() },
+    });
+    // Detach so Chrome survives if our process exits
+    chromeProcess.unref();
+    // Wait for CDP to become reachable (up to 10s)
+    const deadline = Date.now() + 10_000;
+    while (Date.now() < deadline) {
+        if (await isCdpReachable())
+            return;
+        await new Promise((r) => setTimeout(r, 300));
+    }
+    throw new Error([
+        `Chrome을 실행했지만 CDP 포트(${CDP_PORT})에 연결할 수 없습니다.`,
+        `실행 경로: ${exe.path}`,
+        "",
+        "Chrome이 이미 CDP 포트 없이 실행 중이면, 먼저 Chrome을 종료한 후 다시 시도해주세요.",
+    ].join("\n"));
+}
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -136,13 +250,16 @@ function getContext() {
 }
 /**
  * Connect to the user's Chrome via CDP.
- * Chrome must be running with --remote-debugging-port=9222.
- * Retries up to 3 times with backoff.
+ * If Chrome is not running, auto-launch it with --remote-debugging-port.
+ * Retries connection up to 3 times with backoff.
  */
 async function ensureBrowser() {
     if (context && browser?.isConnected())
         return context;
     await closeBrowser();
+    // Auto-launch Chrome if not already running with CDP
+    await launchChromeWithCdp();
+    // Connect via CDP with retry
     let lastErr;
     for (let attempt = 0; attempt < 3; attempt++) {
         try {
@@ -156,22 +273,10 @@ async function ensureBrowser() {
         }
     }
     if (!browser?.isConnected()) {
-        throw new Error([
-            `Chrome에 연결할 수 없습니다 (${CDP_URL}).`,
-            "",
-            "Chrome을 CDP 포트와 함께 실행해주세요:",
-            process.platform === "darwin"
-                ? '  open -a "Google Chrome" --args --remote-debugging-port=9222'
-                : process.platform === "win32"
-                    ? '  start chrome --remote-debugging-port=9222'
-                    : "  google-chrome --remote-debugging-port=9222",
-            "",
-            `원인: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`,
-        ].join("\n"));
+        throw new Error(`Chrome CDP에 연결할 수 없습니다 (${CDP_URL}).\n원인: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`);
     }
     // Use the first existing context (user's real session)
     context = browser.contexts()[0] ?? await browser.newContext();
-    // Register existing pages (user's open tabs)
     registerExistingPages();
     // Listen for new pages (popups, window.open)
     context.on("page", (page) => {
