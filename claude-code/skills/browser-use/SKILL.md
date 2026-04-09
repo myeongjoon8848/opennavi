@@ -62,6 +62,11 @@ If a record exists, use it for navigation.
 | wait | Wait for condition | text, textGone, url, loadState, timeMs |
 | evaluate | Run JavaScript | fn |
 | batch | Run multiple actions | actions: [{kind, ref, ...}], stopOnError |
+| download | Click element and save downloaded file | ref, path |
+| waitForDownload | Wait for next download (no click) | path, timeMs |
+| scrollIntoView | Scroll element into viewport | ref |
+| armDialog | Handle browser dialog (alert/confirm/prompt) | accept, promptText |
+| responseBody | Capture API response by URL pattern | urlPattern |
 
 ### Tips
 
@@ -70,6 +75,15 @@ If a record exists, use it for navigation.
 - **JS extraction**: `browser(action="act", kind="evaluate", fn="document.title")`
 - **Visual debugging**: `browser(action="snapshot", labels=true)` — overlays ref badges on a screenshot alongside the snapshot
 - **Faster snapshots**: `browser(action="snapshot", interactive=true)` — returns only interactive elements (buttons, links, inputs)
+
+### File Downloads
+
+- **Always use `download` kind** to save files — never use `click` then check the Downloads folder.
+  In CDP mode, `click` sends files to an inaccessible temp path.
+- **`download`** clicks the element AND saves the file atomically:
+  `browser(action="act", kind="download", ref="e5", path="/absolute/path/to/file.pdf")`
+- **`waitForDownload`** is for downloads triggered indirectly (e.g., after form submission) — it waits without clicking.
+- `path` must be an absolute path including the filename.
 
 ### Error Recovery
 

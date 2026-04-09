@@ -44,6 +44,16 @@ npm start          # MCP 서버 실행
 
 Always bump version as a separate commit after the feature/fix commit.
 
+## Release Notes
+
+- Language: English only
+- Tone: neutral, factual — describe what changed, not who did it or why it matters
+  - Good: "Navigations triggered by clicks are now validated against SSRF policy."
+  - Bad: "We hardened security patterns." / "보안을 강화했습니다."
+- Structure: `## What's New` → category sections (`### 🔒 Security`, `### 🛠 Robustness`, `### ✨ Features`, `### 🐛 Bug Fixes`) → bullet list with **bold label** and em-dash description
+- Never mention reference codebases by name — describe what the change does, not where it came from
+- Title format: `vX.Y.Z — Short Summary` (under 60 chars)
+
 ## Plugin Update
 
 After pushing changes with a version bump:
