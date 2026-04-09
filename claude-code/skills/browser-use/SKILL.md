@@ -1,6 +1,6 @@
 ---
 name: browser-use
-description: "Browser automation with ASM (Agent Site Map). Navigates websites, extracts content, fills forms, takes screenshots. Uses ASM for efficient revisits. TRIGGER when: user asks to visit a URL, scrape a page, interact with a website, or any browser automation task."
+description: "Browser automation with OpenNavi. Navigates websites, extracts content, fills forms, takes screenshots. Uses OpenNavi for efficient revisits. TRIGGER when: user asks to visit a URL, scrape a page, interact with a website, or any browser automation task."
 ---
 
 # Browser Automation

@@ -17,7 +17,7 @@ import { takeSnapshot } from "./snapshot.js";
 import { executeAct, type ActRequest } from "./actions.js";
 import { restoreRefs, type RoleRefMap } from "./refs.js";
 import { screenshotWithLabels } from "./labels.js";
-import { asmQuery, asmSave, asmVerify, asmUpdatePage } from "./asm.js";
+import { naviQuery, naviSave, naviVerify, naviUpdatePage } from "./opennavi.js";
 import { toAIFriendlyError } from "./errors.js";
 
 const EXTERNAL_CONTENT_BOUNDARY = "---EXTERNAL_BROWSER_CONTENT---";
@@ -62,7 +62,7 @@ server.registerTool("browser", {
     "Refs reset on each new snapshot, so always use the latest refs.",
     "Set labels=true on snapshot/navigate to get a labeled screenshot alongside the snapshot.",
     "Set interactive=true to show only interactive elements (buttons, links, inputs).",
-    "For full workflow guidance (site maps, exit sequence), see the /asm:browser-use skill.",
+    "For full workflow guidance (site maps, exit sequence), see the /opennavi:browser-use skill.",
   ].join(" "),
   inputSchema: {
     action: z.enum(["navigate", "snapshot", "act", "screenshot", "tabs", "open", "close", "console"]).describe("The browser action to perform"),
@@ -445,18 +445,18 @@ server.registerTool("browser", {
   }
 });
 
-// --- ASM Registry tools ---
+// --- OpenNavi Registry tools ---
 
 server.registerTool("client", {
-  title: "ASM Client",
+  title: "OpenNavi Client",
   description: [
-    "Interact with the ASM (Agent Site Map) Registry.",
+    "Interact with the OpenNavi Registry.",
     "Commands: query, save, verify, update-page.",
     "query: get saved site map for a URL. save: store a new site map. verify: confirm existing map is accurate. update-page: update a single page entry.",
-    "For full workflow guidance (site maps, exit sequence), see the /asm:browser-use skill.",
+    "For full workflow guidance (site maps, exit sequence), see the /opennavi:browser-use skill.",
   ].join(" "),
   inputSchema: {
-    command: z.enum(["query", "save", "verify", "update-page"]).describe("ASM command"),
+    command: z.enum(["query", "save", "verify", "update-page"]).describe("OpenNavi command"),
     url: z.string().optional().describe("URL to query (for query command)"),
     domain: z.string().optional().describe("Domain (for save/verify/update-page)"),
     pageId: z.string().optional().describe("Page ID (for update-page)"),
@@ -470,20 +470,20 @@ server.registerTool("client", {
       case "query": {
         const url = params.url;
         if (!url) throw new Error("url is required for query");
-        result = await asmQuery(url);
+        result = await naviQuery(url);
         break;
       }
       case "save": {
         const domain = params.domain;
         const json = params.json;
         if (!domain || !json) throw new Error("domain and json are required for save");
-        result = await asmSave(domain, json);
+        result = await naviSave(domain, json);
         break;
       }
       case "verify": {
         const domain = params.domain;
         if (!domain) throw new Error("domain is required for verify");
-        result = await asmVerify(domain);
+        result = await naviVerify(domain);
         break;
       }
       case "update-page": {
@@ -491,7 +491,7 @@ server.registerTool("client", {
         const pageId = params.pageId;
         const json = params.json;
         if (!domain || !pageId || !json) throw new Error("domain, pageId, and json are required for update-page");
-        result = await asmUpdatePage(domain, pageId, json);
+        result = await naviUpdatePage(domain, pageId, json);
         break;
       }
       default:

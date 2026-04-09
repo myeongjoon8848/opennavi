@@ -41,7 +41,7 @@ const snapshot_js_1 = require("./snapshot.js");
 const actions_js_1 = require("./actions.js");
 const refs_js_1 = require("./refs.js");
 const labels_js_1 = require("./labels.js");
-const asm_js_1 = require("./asm.js");
+const opennavi_js_1 = require("./opennavi.js");
 const errors_js_1 = require("./errors.js");
 const EXTERNAL_CONTENT_BOUNDARY = "---EXTERNAL_BROWSER_CONTENT---";
 function wrapExternalContent(text) {
@@ -81,7 +81,7 @@ server.registerTool("browser", {
         "Refs reset on each new snapshot, so always use the latest refs.",
         "Set labels=true on snapshot/navigate to get a labeled screenshot alongside the snapshot.",
         "Set interactive=true to show only interactive elements (buttons, links, inputs).",
-        "IMPORTANT: Invoke the /asm:browser-use skill before using this tool for the full browsing workflow.",
+        "For full workflow guidance (site maps, exit sequence), see the /opennavi:browser-use skill.",
     ].join(" "),
     inputSchema: {
         action: zod_1.z.enum(["navigate", "snapshot", "act", "screenshot", "tabs", "open", "close", "console"]).describe("The browser action to perform"),
@@ -438,17 +438,17 @@ server.registerTool("browser", {
         };
     }
 });
-// --- ASM Registry tools ---
+// --- OpenNavi Registry tools ---
 server.registerTool("client", {
-    title: "ASM Client",
+    title: "OpenNavi Client",
     description: [
-        "Interact with the ASM (Agent Site Map) Registry.",
+        "Interact with the OpenNavi Registry.",
         "Commands: query, save, verify, update-page.",
         "query: get saved site map for a URL. save: store a new site map. verify: confirm existing map is accurate. update-page: update a single page entry.",
-        "IMPORTANT: Invoke the /asm:browser-use skill before using this tool for the full browsing workflow.",
+        "For full workflow guidance (site maps, exit sequence), see the /opennavi:browser-use skill.",
     ].join(" "),
     inputSchema: {
-        command: zod_1.z.enum(["query", "save", "verify", "update-page"]).describe("ASM command"),
+        command: zod_1.z.enum(["query", "save", "verify", "update-page"]).describe("OpenNavi command"),
         url: zod_1.z.string().optional().describe("URL to query (for query command)"),
         domain: zod_1.z.string().optional().describe("Domain (for save/verify/update-page)"),
         pageId: zod_1.z.string().optional().describe("Page ID (for update-page)"),
@@ -462,7 +462,7 @@ server.registerTool("client", {
                 const url = params.url;
                 if (!url)
                     throw new Error("url is required for query");
-                result = await (0, asm_js_1.asmQuery)(url);
+                result = await (0, opennavi_js_1.naviQuery)(url);
                 break;
             }
             case "save": {
@@ -470,14 +470,14 @@ server.registerTool("client", {
                 const json = params.json;
                 if (!domain || !json)
                     throw new Error("domain and json are required for save");
-                result = await (0, asm_js_1.asmSave)(domain, json);
+                result = await (0, opennavi_js_1.naviSave)(domain, json);
                 break;
             }
             case "verify": {
                 const domain = params.domain;
                 if (!domain)
                     throw new Error("domain is required for verify");
-                result = await (0, asm_js_1.asmVerify)(domain);
+                result = await (0, opennavi_js_1.naviVerify)(domain);
                 break;
             }
             case "update-page": {
@@ -486,7 +486,7 @@ server.registerTool("client", {
                 const json = params.json;
                 if (!domain || !pageId || !json)
                     throw new Error("domain, pageId, and json are required for update-page");
-                result = await (0, asm_js_1.asmUpdatePage)(domain, pageId, json);
+                result = await (0, opennavi_js_1.naviUpdatePage)(domain, pageId, json);
                 break;
             }
             default:

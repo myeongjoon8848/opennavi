@@ -62,9 +62,9 @@ async function screenshotWithLabels(opts) {
     try {
         if (boxes.length > 0) {
             await page.evaluate((labels) => {
-                document.querySelectorAll("[data-asm-labels]").forEach((el) => el.remove());
+                document.querySelectorAll("[data-navi-labels]").forEach((el) => el.remove());
                 const root = document.createElement("div");
-                root.setAttribute("data-asm-labels", "1");
+                root.setAttribute("data-navi-labels", "1");
                 root.style.position = "fixed";
                 root.style.left = "0";
                 root.style.top = "0";
@@ -75,7 +75,7 @@ async function screenshotWithLabels(opts) {
                 const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
                 for (const label of labels) {
                     const box = document.createElement("div");
-                    box.setAttribute("data-asm-labels", "1");
+                    box.setAttribute("data-navi-labels", "1");
                     box.style.position = "absolute";
                     box.style.left = `${label.x}px`;
                     box.style.top = `${label.y}px`;
@@ -84,7 +84,7 @@ async function screenshotWithLabels(opts) {
                     box.style.border = "2px solid #ffb020";
                     box.style.boxSizing = "border-box";
                     const tag = document.createElement("div");
-                    tag.setAttribute("data-asm-labels", "1");
+                    tag.setAttribute("data-navi-labels", "1");
                     tag.textContent = label.ref;
                     tag.style.position = "absolute";
                     tag.style.left = `${label.x}px`;
@@ -112,7 +112,7 @@ async function screenshotWithLabels(opts) {
     finally {
         await page
             .evaluate(() => {
-            document.querySelectorAll("[data-asm-labels]").forEach((el) => el.remove());
+            document.querySelectorAll("[data-navi-labels]").forEach((el) => el.remove());
         })
             .catch(() => { });
     }

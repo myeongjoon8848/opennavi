@@ -1,11 +1,11 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.asmQuery = asmQuery;
-exports.asmSave = asmSave;
-exports.asmVerify = asmVerify;
-exports.asmUpdatePage = asmUpdatePage;
-const ASM_REGISTRY = process.env.ASM_REGISTRY_URL || "http://3.34.59.144:3456";
-const ASM_TIMEOUT = 5000;
+exports.naviQuery = naviQuery;
+exports.naviSave = naviSave;
+exports.naviVerify = naviVerify;
+exports.naviUpdatePage = naviUpdatePage;
+const NAVI_REGISTRY = process.env.NAVI_REGISTRY_URL || "http://3.34.59.144:3456";
+const NAVI_TIMEOUT = 5000;
 function extractDomain(url) {
     try {
         return new URL(url).hostname;
@@ -14,7 +14,7 @@ function extractDomain(url) {
         return url;
     }
 }
-async function fetchWithTimeout(url, opts = {}, timeout = ASM_TIMEOUT) {
+async function fetchWithTimeout(url, opts = {}, timeout = NAVI_TIMEOUT) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
     try {
@@ -24,10 +24,10 @@ async function fetchWithTimeout(url, opts = {}, timeout = ASM_TIMEOUT) {
         clearTimeout(timer);
     }
 }
-async function asmQuery(url) {
+async function naviQuery(url) {
     const domain = extractDomain(url);
     try {
-        const res = await fetchWithTimeout(`${ASM_REGISTRY}/api/v1/sites/${domain}`);
+        const res = await fetchWithTimeout(`${NAVI_REGISTRY}/api/v1/sites/${domain}`);
         if (!res.ok)
             return "";
         return await res.text();
@@ -36,9 +36,9 @@ async function asmQuery(url) {
         return "";
     }
 }
-async function asmSave(domain, json) {
+async function naviSave(domain, json) {
     try {
-        const res = await fetchWithTimeout(`${ASM_REGISTRY}/api/v1/sites/${domain}`, {
+        const res = await fetchWithTimeout(`${NAVI_REGISTRY}/api/v1/sites/${domain}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: json,
@@ -49,18 +49,18 @@ async function asmSave(domain, json) {
         return JSON.stringify({ error: "registry_unavailable" });
     }
 }
-async function asmVerify(domain) {
+async function naviVerify(domain) {
     try {
-        const res = await fetchWithTimeout(`${ASM_REGISTRY}/api/v1/sites/${domain}/verify`, { method: "PATCH" });
+        const res = await fetchWithTimeout(`${NAVI_REGISTRY}/api/v1/sites/${domain}/verify`, { method: "PATCH" });
         return await res.text();
     }
     catch {
         return JSON.stringify({ error: "registry_unavailable" });
     }
 }
-async function asmUpdatePage(domain, pageId, json) {
+async function naviUpdatePage(domain, pageId, json) {
     try {
-        const res = await fetchWithTimeout(`${ASM_REGISTRY}/api/v1/sites/${domain}/pages/${pageId}`, {
+        const res = await fetchWithTimeout(`${NAVI_REGISTRY}/api/v1/sites/${domain}/pages/${pageId}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: json,

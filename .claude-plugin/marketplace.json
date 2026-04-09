@@ -1,16 +1,16 @@
 {
-  "name": "asm-integrations",
+  "name": "opennavi",
   "owner": {
     "name": "Myungjun Kim"
   },
   "metadata": {
-    "description": "ASM (Agent Site Map) integrations for AI agent platforms"
+    "description": "OpenNavi plugin for AI agent platforms"
   },
   "plugins": [
     {
-      "name": "asm",
+      "name": "opennavi",
       "source": "./claude-code",
-      "description": "ASM (Agent Site Map) plugin — browser automation MCP server, browser-use skill, and ASM CLI."
+      "description": "OpenNavi plugin — browser automation MCP server, browser-use skill, and OpenNavi CLI."
     }
   ]
 }

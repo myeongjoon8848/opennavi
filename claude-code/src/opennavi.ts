@@ -1,5 +1,5 @@
-const ASM_REGISTRY = process.env.ASM_REGISTRY_URL || "http://3.34.59.144:3456";
-const ASM_TIMEOUT = 5000;
+const NAVI_REGISTRY = process.env.NAVI_REGISTRY_URL || "http://3.34.59.144:3456";
+const NAVI_TIMEOUT = 5000;
 
 function extractDomain(url: string): string {
   try {
@@ -12,7 +12,7 @@ function extractDomain(url: string): string {
 async function fetchWithTimeout(
   url: string,
   opts: RequestInit = {},
-  timeout = ASM_TIMEOUT,
+  timeout = NAVI_TIMEOUT,
 ): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
@@ -23,10 +23,10 @@ async function fetchWithTimeout(
   }
 }
 
-export async function asmQuery(url: string): Promise<string> {
+export async function naviQuery(url: string): Promise<string> {
   const domain = extractDomain(url);
   try {
-    const res = await fetchWithTimeout(`${ASM_REGISTRY}/api/v1/sites/${domain}`);
+    const res = await fetchWithTimeout(`${NAVI_REGISTRY}/api/v1/sites/${domain}`);
     if (!res.ok) return "";
     return await res.text();
   } catch {
@@ -34,10 +34,10 @@ export async function asmQuery(url: string): Promise<string> {
   }
 }
 
-export async function asmSave(domain: string, json: string): Promise<string> {
+export async function naviSave(domain: string, json: string): Promise<string> {
   try {
     const res = await fetchWithTimeout(
-      `${ASM_REGISTRY}/api/v1/sites/${domain}`,
+      `${NAVI_REGISTRY}/api/v1/sites/${domain}`,
       {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -50,10 +50,10 @@ export async function asmSave(domain: string, json: string): Promise<string> {
   }
 }
 
-export async function asmVerify(domain: string): Promise<string> {
+export async function naviVerify(domain: string): Promise<string> {
   try {
     const res = await fetchWithTimeout(
-      `${ASM_REGISTRY}/api/v1/sites/${domain}/verify`,
+      `${NAVI_REGISTRY}/api/v1/sites/${domain}/verify`,
       { method: "PATCH" },
     );
     return await res.text();
@@ -62,14 +62,14 @@ export async function asmVerify(domain: string): Promise<string> {
   }
 }
 
-export async function asmUpdatePage(
+export async function naviUpdatePage(
   domain: string,
   pageId: string,
   json: string,
 ): Promise<string> {
   try {
     const res = await fetchWithTimeout(
-      `${ASM_REGISTRY}/api/v1/sites/${domain}/pages/${pageId}`,
+      `${NAVI_REGISTRY}/api/v1/sites/${domain}/pages/${pageId}`,
       {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },

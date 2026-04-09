@@ -1,6 +1,6 @@
 {
-  "name": "asm",
-  "description": "ASM (Agent Site Map) plugin — browser automation MCP server, browser-use skill, and ASM CLI.",
+  "name": "opennavi",
+  "description": "OpenNavi plugin — browser automation MCP server, browser-use skill, and OpenNavi CLI.",
   "version": "0.3.8",
   "author": {
     "name": "Myeongjoon Kim"
