@@ -93,7 +93,10 @@ Use `violations` from the Step 1 response to decide:
 - **`violations` is empty + no page changed**: `verify`.
 - **`violations` is empty + single page changed**: `update-page`.
 
-**Writing descriptions**: state what the page IS, not what it CONTAINS. No field names, response shapes, or counts. Same URL with different params = separate pages (e.g. `/board?type=5` and `/board?type=6` are two pages).
+**Writing rules** (see `spec.rules` for full details):
+- **description**: what the page IS + what you can DO (search, filter, paginate). Not what it CONTAINS (no field names, response shapes, counts).
+- **linksTo**: required for every page. Use `[]` if no links. This builds the navigation graph.
+- Same URL with different params = separate pages (e.g. `/board?type=5` and `/board?type=6`).
 
 ```
 client(command="save", domain="example.com", json="{...}")
