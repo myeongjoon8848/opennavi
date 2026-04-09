@@ -93,18 +93,13 @@ Use `violations` from the Step 1 response to decide:
 - **`violations` is empty + no page changed**: `verify`.
 - **`violations` is empty + single page changed**: `update-page`.
 
-**Writing rules** (see `spec.rules` for full details):
-- **description**: what the page IS + what you can DO (search, filter, paginate). Not what it CONTAINS (no field names, response shapes, counts).
-- **linksTo**: required for every page. Use `[]` if no links. This builds the navigation graph.
-- Same URL with different params = separate pages (e.g. `/board?type=5` and `/board?type=6`).
+Follow `spec.rules` from the Step 1 response for all content rules. Pages must be an object keyed by page ID (NOT an array):
 
 ```
 client(command="save", domain="example.com", json="{\"overview\":\"...\",\"pages\":{\"page-id\":{\"url\":\"/path\",\"type\":\"list\",\"description\":\"...\",\"linksTo\":[\"other-page\"]}}}")
 client(command="verify", domain="example.com")
-client(command="update-page", domain="example.com", pageId="product-list", json="{\"url\":\"/products\",\"type\":\"list\",\"description\":\"...\",\"linksTo\":[\"product-detail\"]}")
+client(command="update-page", domain="example.com", pageId="product-list", json="{\"url\":\"/products\",\"type\":\"list\",\"description\":\"...\",\"linksTo\":[]}")
 ```
-
-**pages must be an object keyed by page ID, NOT an array.**
 
 ### 3b. Close browser
 
