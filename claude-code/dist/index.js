@@ -194,26 +194,23 @@ server.registerTool("browser", {
                 const url = params.url;
                 if (!url)
                     throw new errors_js_1.BrowserValidationError("url is required for navigate");
-                // SSRF pre-navigation check
+                // SSRF pre-navigation checks
+                (0, navigation_guard_js_1.assertNoProxyBypass)(ssrfPolicy);
                 await (0, navigation_guard_js_1.assertNavigationAllowed)(url, ssrfPolicy);
                 const timeout = Math.max(1000, Math.min(120_000, params.timeoutMs ?? 30_000));
                 let warning;
-                // Navigation with auto-retry on detached frame
+                // Navigation with auto-retry on detached frame (ported from OpenClaw reconnect pattern)
+                let lastResponse = null;
+                let needsReconnect = false;
                 const navigateWithRetry = async (p) => {
                     try {
-                        await p.goto(url, { timeout });
+                        lastResponse = await p.goto(url, { timeout });
                     }
                     catch (err) {
                         const msg = err instanceof Error ? err.message : String(err);
                         if (msg.includes("frame was detached") || msg.includes("has been closed")) {
-                            // Single auto-retry after 800ms (SPA cross-origin navigation)
-                            await new Promise((r) => setTimeout(r, 800));
-                            try {
-                                await p.goto(url, { timeout });
-                            }
-                            catch {
-                                warning = "Navigation failed after retry, showing current page state";
-                            }
+                            // Force reconnect to get a fresh page handle, then retry
+                            needsReconnect = true;
                         }
                         else if (msg.includes("Timeout") || msg.includes("timeout")) {
                             warning = "Navigation timed out, showing current page state";
@@ -240,6 +237,24 @@ server.registerTool("browser", {
                         await navigateWithRetry(page);
                     }
                 }
+                // If frame was detached, force-reconnect and retry with a fresh page
+                if (needsReconnect) {
+                    await (0, session_js_1.forceReconnect)();
+                    const tabs = (0, session_js_1.listTabs)();
+                    if (tabs.length === 0) {
+                        const tab = await (0, session_js_1.openTab)(url, timeout);
+                        page = tab.page;
+                    }
+                    else {
+                        page = (0, session_js_1.getPage)();
+                        try {
+                            lastResponse = await page.goto(url, { timeout });
+                        }
+                        catch {
+                            warning = "Navigation failed after reconnect, showing current page state";
+                        }
+                    }
+                }
                 // SPA navigation recovery
                 const oldTid = (0, session_js_1.getTargetId)(page);
                 const tid = oldTid
@@ -247,7 +262,19 @@ server.registerTool("browser", {
                     : (0, session_js_1.getTargetId)(page);
                 const resolvedPage = tid ? (0, session_js_1.getPage)(tid) : page;
                 // SSRF post-navigation check (catches redirects to private networks)
-                await (0, navigation_guard_js_1.assertNavigationResultAllowed)(resolvedPage.url(), ssrfPolicy);
+                try {
+                    // Validate redirect chain — each hop must pass SSRF policy
+                    if (lastResponse?.request?.()) {
+                        await (0, navigation_guard_js_1.assertRedirectChainAllowed)(lastResponse.request(), ssrfPolicy);
+                    }
+                    await (0, navigation_guard_js_1.assertNavigationResultAllowed)(resolvedPage.url(), ssrfPolicy);
+                }
+                catch (ssrfErr) {
+                    // Quarantine the tab — it navigated to a blocked destination
+                    if (tid)
+                        await (0, session_js_1.markTargetBlocked)(tid);
+                    throw ssrfErr;
+                }
                 (0, refs_js_1.restoreRefs)(resolvedPage, tid);
                 const info = await getPageInfo(resolvedPage);
                 const snap = await (0, snapshot_js_1.takeSnapshot)(resolvedPage, {
@@ -378,7 +405,7 @@ server.registerTool("browser", {
                     urlPattern: params.urlPattern,
                     maxChars: params.maxChars,
                 };
-                const actResult = await (0, actions_js_1.executeAct)(page, request);
+                const actResult = await (0, actions_js_1.executeAct)(page, request, 0, ssrfPolicy);
                 const info = await getPageInfo(page);
                 const tid = (0, session_js_1.getTargetId)(page);
                 const snap = await (0, snapshot_js_1.takeSnapshot)(page, {
@@ -485,8 +512,10 @@ server.registerTool("browser", {
             }
             case "open": {
                 const url = params.url;
-                if (url)
+                if (url) {
+                    (0, navigation_guard_js_1.assertNoProxyBypass)(ssrfPolicy);
                     await (0, navigation_guard_js_1.assertNavigationAllowed)(url, ssrfPolicy);
+                }
                 const tab = await (0, session_js_1.openTab)(url);
                 const info = await getPageInfo(tab.page);
                 let snap = undefined;

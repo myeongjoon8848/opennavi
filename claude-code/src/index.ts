@@ -14,6 +14,8 @@ import {
   getConsoleLogs,
   getPageErrors,
   getNetworkRequests,
+  markTargetBlocked,
+  forceReconnect,
 } from "./session.js";
 import { takeSnapshot } from "./snapshot.js";
 import { executeAct, type ActRequest } from "./actions.js";
@@ -21,7 +23,7 @@ import { restoreRefs, type RoleRefMap } from "./refs.js";
 import { screenshotWithLabels } from "./labels.js";
 import { naviQuery, naviSave, naviVerify, naviUpdatePage } from "./opennavi.js";
 import { toAIFriendlyError, BrowserValidationError } from "./errors.js";
-import { assertNavigationAllowed, assertNavigationResultAllowed, type SsrfPolicy } from "./navigation-guard.js";
+import { assertNavigationAllowed, assertNavigationResultAllowed, assertNoProxyBypass, assertRedirectChainAllowed, type SsrfPolicy } from "./navigation-guard.js";
 import { captureNormalizedScreenshot } from "./screenshot.js";
 import {
   getCookies,
@@ -201,26 +203,24 @@ server.registerTool("browser", {
         const url = params.url;
         if (!url) throw new BrowserValidationError("url is required for navigate");
 
-        // SSRF pre-navigation check
+        // SSRF pre-navigation checks
+        assertNoProxyBypass(ssrfPolicy);
         await assertNavigationAllowed(url, ssrfPolicy);
 
         const timeout = Math.max(1000, Math.min(120_000, params.timeoutMs ?? 30_000));
         let warning: string | undefined;
 
-        // Navigation with auto-retry on detached frame
+        // Navigation with auto-retry on detached frame (ported from OpenClaw reconnect pattern)
+        let lastResponse: any = null;
+        let needsReconnect = false;
         const navigateWithRetry = async (p: Awaited<ReturnType<typeof getPage>>) => {
           try {
-            await p.goto(url, { timeout });
+            lastResponse = await p.goto(url, { timeout });
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             if (msg.includes("frame was detached") || msg.includes("has been closed")) {
-              // Single auto-retry after 800ms (SPA cross-origin navigation)
-              await new Promise((r) => setTimeout(r, 800));
-              try {
-                await p.goto(url, { timeout });
-              } catch {
-                warning = "Navigation failed after retry, showing current page state";
-              }
+              // Force reconnect to get a fresh page handle, then retry
+              needsReconnect = true;
             } else if (msg.includes("Timeout") || msg.includes("timeout")) {
               warning = "Navigation timed out, showing current page state";
             } else {
@@ -245,6 +245,23 @@ server.registerTool("browser", {
           }
         }
 
+        // If frame was detached, force-reconnect and retry with a fresh page
+        if (needsReconnect) {
+          await forceReconnect();
+          const tabs = listTabs();
+          if (tabs.length === 0) {
+            const tab = await openTab(url, timeout);
+            page = tab.page;
+          } else {
+            page = getPage();
+            try {
+              lastResponse = await page.goto(url, { timeout });
+            } catch {
+              warning = "Navigation failed after reconnect, showing current page state";
+            }
+          }
+        }
+
         // SPA navigation recovery
         const oldTid = getTargetId(page);
         const tid = oldTid
@@ -254,7 +271,17 @@ server.registerTool("browser", {
         const resolvedPage = tid ? getPage(tid) : page;
 
         // SSRF post-navigation check (catches redirects to private networks)
-        await assertNavigationResultAllowed(resolvedPage.url(), ssrfPolicy);
+        try {
+          // Validate redirect chain — each hop must pass SSRF policy
+          if (lastResponse?.request?.()) {
+            await assertRedirectChainAllowed(lastResponse.request(), ssrfPolicy);
+          }
+          await assertNavigationResultAllowed(resolvedPage.url(), ssrfPolicy);
+        } catch (ssrfErr) {
+          // Quarantine the tab — it navigated to a blocked destination
+          if (tid) await markTargetBlocked(tid);
+          throw ssrfErr;
+        }
 
         restoreRefs(resolvedPage, tid);
 
@@ -400,7 +427,7 @@ server.registerTool("browser", {
           maxChars: params.maxChars,
         };
 
-        const actResult = await executeAct(page, request);
+        const actResult = await executeAct(page, request, 0, ssrfPolicy);
         const info = await getPageInfo(page);
         const tid = getTargetId(page);
         const snap = await takeSnapshot(page, {
@@ -516,7 +543,10 @@ server.registerTool("browser", {
 
       case "open": {
         const url = params.url;
-        if (url) await assertNavigationAllowed(url, ssrfPolicy);
+        if (url) {
+          assertNoProxyBypass(ssrfPolicy);
+          await assertNavigationAllowed(url, ssrfPolicy);
+        }
         const tab = await openTab(url);
         const info = await getPageInfo(tab.page);
 
