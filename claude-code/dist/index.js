@@ -43,6 +43,7 @@ const refs_js_1 = require("./refs.js");
 const labels_js_1 = require("./labels.js");
 const opennavi_js_1 = require("./opennavi.js");
 const errors_js_1 = require("./errors.js");
+const navigation_guard_js_1 = require("./navigation-guard.js");
 const screenshot_js_1 = require("./screenshot.js");
 const state_js_1 = require("./state.js");
 const EXTERNAL_CONTENT_BOUNDARY = "---EXTERNAL_BROWSER_CONTENT---";
@@ -67,6 +68,11 @@ async function getPageInfo(page) {
 }
 // Track last snapshot refs for labeled screenshots
 let lastSnapshotRefs = {};
+// SSRF policy — configurable via BROWSER_ALLOW_PRIVATE_NETWORK env var
+const ssrfPolicy = {
+    allowPrivateNetwork: process.env.BROWSER_ALLOW_PRIVATE_NETWORK === "true",
+    hostnameAllowlist: process.env.BROWSER_HOSTNAME_ALLOWLIST?.split(",").map((s) => s.trim()).filter(Boolean),
+};
 // Track queried domains to auto-query on new domain navigate
 const queriedDomains = new Set();
 function extractDomainFromUrl(url) {
@@ -187,7 +193,9 @@ server.registerTool("browser", {
             case "navigate": {
                 const url = params.url;
                 if (!url)
-                    throw new Error("url is required for navigate");
+                    throw new errors_js_1.BrowserValidationError("url is required for navigate");
+                // SSRF pre-navigation check
+                await (0, navigation_guard_js_1.assertNavigationAllowed)(url, ssrfPolicy);
                 const timeout = Math.max(1000, Math.min(120_000, params.timeoutMs ?? 30_000));
                 let warning;
                 // Navigation with auto-retry on detached frame
@@ -238,6 +246,8 @@ server.registerTool("browser", {
                     ? await (0, session_js_1.resolveTargetIdAfterNavigate)({ oldTargetId: oldTid, navigatedUrl: url })
                     : (0, session_js_1.getTargetId)(page);
                 const resolvedPage = tid ? (0, session_js_1.getPage)(tid) : page;
+                // SSRF post-navigation check (catches redirects to private networks)
+                await (0, navigation_guard_js_1.assertNavigationResultAllowed)(resolvedPage.url(), ssrfPolicy);
                 (0, refs_js_1.restoreRefs)(resolvedPage, tid);
                 const info = await getPageInfo(resolvedPage);
                 const snap = await (0, snapshot_js_1.takeSnapshot)(resolvedPage, {
@@ -475,6 +485,8 @@ server.registerTool("browser", {
             }
             case "open": {
                 const url = params.url;
+                if (url)
+                    await (0, navigation_guard_js_1.assertNavigationAllowed)(url, ssrfPolicy);
                 const tab = await (0, session_js_1.openTab)(url);
                 const info = await getPageInfo(tab.page);
                 let snap = undefined;

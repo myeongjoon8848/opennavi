@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { mkdir } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
+import { BrowserValidationError } from "./errors.js";
 
 // ---------------------------------------------------------------------------
 // Timeout helpers (ported from OpenClaw pw-tools-core.shared.ts)
@@ -75,7 +76,7 @@ export interface ActRequest {
 }
 
 function requireRef(request: ActRequest): string {
-  if (!request.ref) throw new Error(`ref is required for action kind="${request.kind}"`);
+  if (!request.ref) throw new BrowserValidationError(`ref is required for action kind="${request.kind}"`);
   return request.ref;
 }
 
@@ -128,7 +129,7 @@ export async function executeAct(page: Page, request: ActRequest, depth = 0): Pr
 
     case "press": {
       const key = request.key;
-      if (!key) throw new Error("key is required for action kind='press'");
+      if (!key) throw new BrowserValidationError("key is required for action kind='press'");
       if (request.ref) {
         await refLocator(page, request.ref).press(key);
       } else {
@@ -154,7 +155,7 @@ export async function executeAct(page: Page, request: ActRequest, depth = 0): Pr
     case "drag": {
       const startRef = request.startRef;
       const endRef = request.endRef;
-      if (!startRef || !endRef) throw new Error("startRef and endRef are required for drag");
+      if (!startRef || !endRef) throw new BrowserValidationError("startRef and endRef are required for drag");
       const source = refLocator(page, startRef);
       const target = refLocator(page, endRef);
       await source.dragTo(target);
@@ -163,7 +164,7 @@ export async function executeAct(page: Page, request: ActRequest, depth = 0): Pr
 
     case "fill": {
       const fields = request.fields;
-      if (!fields?.length) throw new Error("fields array is required for fill");
+      if (!fields?.length) throw new BrowserValidationError("fields array is required for fill");
       const timeout = normalizeTimeout(request.timeoutMs, 8_000);
       for (const field of fields) {
         await refLocator(page, field.ref).fill(field.value, { timeout });
@@ -219,7 +220,7 @@ export async function executeAct(page: Page, request: ActRequest, depth = 0): Pr
     // -----------------------------------------------------------------
     case "evaluate": {
       const fnText = request.fn;
-      if (!fnText) throw new Error("fn is required for evaluate");
+      if (!fnText) throw new BrowserValidationError("fn is required for evaluate");
 
       const outerTimeout = normalizeTimeout(request.timeoutMs, 20_000);
       // Leave 500ms headroom for routing/serialization
@@ -352,7 +353,7 @@ export async function executeAct(page: Page, request: ActRequest, depth = 0): Pr
     // -----------------------------------------------------------------
     case "responseBody": {
       const pattern = request.urlPattern ?? request.url;
-      if (!pattern) throw new Error("urlPattern or url is required for responseBody");
+      if (!pattern) throw new BrowserValidationError("urlPattern or url is required for responseBody");
       const timeout = normalizeTimeout(request.timeoutMs, 20_000);
       const maxChars = Math.max(1, Math.min(5_000_000, request.maxChars ?? 200_000));
 
@@ -408,9 +409,9 @@ export async function executeAct(page: Page, request: ActRequest, depth = 0): Pr
     // -----------------------------------------------------------------
     case "batch": {
       const actions = request.actions;
-      if (!actions?.length) throw new Error("actions array is required for batch");
-      if (actions.length > MAX_BATCH_ACTIONS) throw new Error(`batch supports at most ${MAX_BATCH_ACTIONS} actions`);
-      if (depth >= MAX_BATCH_DEPTH) throw new Error(`batch nesting depth exceeded (max ${MAX_BATCH_DEPTH})`);
+      if (!actions?.length) throw new BrowserValidationError("actions array is required for batch");
+      if (actions.length > MAX_BATCH_ACTIONS) throw new BrowserValidationError(`batch supports at most ${MAX_BATCH_ACTIONS} actions`);
+      if (depth >= MAX_BATCH_DEPTH) throw new BrowserValidationError(`batch nesting depth exceeded (max ${MAX_BATCH_DEPTH})`);
 
       const stopOnError = request.stopOnError ?? true;
       const results: Array<{ index: number; ok: boolean; result?: unknown; error?: string }> = [];

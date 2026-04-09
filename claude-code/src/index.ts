@@ -20,7 +20,8 @@ import { executeAct, type ActRequest } from "./actions.js";
 import { restoreRefs, type RoleRefMap } from "./refs.js";
 import { screenshotWithLabels } from "./labels.js";
 import { naviQuery, naviSave, naviVerify, naviUpdatePage } from "./opennavi.js";
-import { toAIFriendlyError } from "./errors.js";
+import { toAIFriendlyError, BrowserValidationError } from "./errors.js";
+import { assertNavigationAllowed, assertNavigationResultAllowed, type SsrfPolicy } from "./navigation-guard.js";
 import { captureNormalizedScreenshot } from "./screenshot.js";
 import {
   getCookies,
@@ -63,6 +64,12 @@ async function getPageInfo(page: Awaited<ReturnType<typeof getPage>>) {
 
 // Track last snapshot refs for labeled screenshots
 let lastSnapshotRefs: RoleRefMap = {};
+
+// SSRF policy — configurable via BROWSER_ALLOW_PRIVATE_NETWORK env var
+const ssrfPolicy: SsrfPolicy = {
+  allowPrivateNetwork: process.env.BROWSER_ALLOW_PRIVATE_NETWORK === "true",
+  hostnameAllowlist: process.env.BROWSER_HOSTNAME_ALLOWLIST?.split(",").map((s) => s.trim()).filter(Boolean),
+};
 
 // Track queried domains to auto-query on new domain navigate
 const queriedDomains = new Set<string>();
@@ -192,7 +199,10 @@ server.registerTool("browser", {
     switch (action) {
       case "navigate": {
         const url = params.url;
-        if (!url) throw new Error("url is required for navigate");
+        if (!url) throw new BrowserValidationError("url is required for navigate");
+
+        // SSRF pre-navigation check
+        await assertNavigationAllowed(url, ssrfPolicy);
 
         const timeout = Math.max(1000, Math.min(120_000, params.timeoutMs ?? 30_000));
         let warning: string | undefined;
@@ -242,6 +252,10 @@ server.registerTool("browser", {
           : getTargetId(page);
 
         const resolvedPage = tid ? getPage(tid) : page;
+
+        // SSRF post-navigation check (catches redirects to private networks)
+        await assertNavigationResultAllowed(resolvedPage.url(), ssrfPolicy);
+
         restoreRefs(resolvedPage, tid);
 
         const info = await getPageInfo(resolvedPage);
@@ -502,6 +516,7 @@ server.registerTool("browser", {
 
       case "open": {
         const url = params.url;
+        if (url) await assertNavigationAllowed(url, ssrfPolicy);
         const tab = await openTab(url);
         const info = await getPageInfo(tab.page);
 

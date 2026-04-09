@@ -18,6 +18,7 @@ const node_child_process_1 = require("node:child_process");
 const node_fs_1 = require("node:fs");
 const node_os_1 = require("node:os");
 const node_path_1 = require("node:path");
+const errors_js_1 = require("./errors.js");
 // ---------------------------------------------------------------------------
 // CDP configuration
 // ---------------------------------------------------------------------------
@@ -354,6 +355,10 @@ let browser = null;
 let context = null;
 const pages = new Map();
 let tabCounter = 0;
+/** Last used tab — auto-selected when targetId is omitted */
+let lastTargetId = null;
+/** Pending connection promise — deduplicates concurrent ensureBrowser() calls */
+let connectingPromise = null;
 function nextTargetId() {
     return `tab-${++tabCounter}`;
 }
@@ -364,10 +369,21 @@ function getContext() {
  * Connect to the user's Chrome via CDP.
  * If Chrome is not running, auto-launch it with --remote-debugging-port.
  * Retries connection up to 3 times with backoff.
+ *
+ * Concurrent calls are deduplicated — only one connection attempt runs at a time.
  */
 async function ensureBrowser() {
     if (context && browser?.isConnected())
         return context;
+    // Deduplicate concurrent connection attempts
+    if (connectingPromise)
+        return connectingPromise;
+    connectingPromise = connectBrowserInternal().finally(() => {
+        connectingPromise = null;
+    });
+    return connectingPromise;
+}
+async function connectBrowserInternal() {
     await closeBrowser();
     // Auto-launch Chrome if not already running with CDP
     await launchChromeWithCdp();
@@ -381,12 +397,21 @@ async function ensureBrowser() {
         }
         catch (err) {
             lastErr = err;
+            // Don't retry rate-limit errors
+            const msg = err instanceof Error ? err.message : String(err);
+            if (msg.includes("rate limit"))
+                break;
             await new Promise((r) => setTimeout(r, 250 + attempt * 250));
         }
     }
     if (!browser?.isConnected()) {
-        throw new Error(`Chrome CDP에 연결할 수 없습니다 (${CDP_URL}).\n원인: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`);
+        throw new errors_js_1.BrowserConnectionError(`Chrome CDP에 연결할 수 없습니다 (${CDP_URL}).\n원인: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`);
     }
+    // Auto-cleanup on unexpected disconnect
+    browser.on("disconnected", () => {
+        context = null;
+        browser = null;
+    });
     // Use the first existing context (user's real session)
     context = browser.contexts()[0] ?? await browser.newContext();
     registerExistingPages();
@@ -437,17 +462,42 @@ async function openTab(url, timeoutMs) {
     }
     return { targetId: id, page };
 }
+/**
+ * Resolve a tab by targetId.
+ * - Exact match first, then prefix match (e.g. "tab-1" matches "tab-12" only if unique).
+ * - If targetId is omitted, returns the last used tab or the most recent tab.
+ * - Updates lastTargetId on every successful resolution.
+ */
 function getPage(targetId) {
     if (targetId) {
-        const page = pages.get(targetId);
-        if (!page)
-            throw new Error(`Tab not found: ${targetId}. Use action="tabs" to list open tabs.`);
-        return page;
+        // Exact match
+        const exact = pages.get(targetId);
+        if (exact) {
+            lastTargetId = targetId;
+            return exact;
+        }
+        // Prefix match — only if unambiguous
+        const lower = targetId.toLowerCase();
+        const matches = [...pages.keys()].filter((id) => id.toLowerCase().startsWith(lower));
+        if (matches.length === 1) {
+            lastTargetId = matches[0];
+            return pages.get(matches[0]);
+        }
+        if (matches.length > 1) {
+            throw new errors_js_1.BrowserTabNotFoundError(`Ambiguous targetId "${targetId}" matches ${matches.length} tabs: ${matches.join(", ")}. Use a more specific targetId.`);
+        }
+        throw new errors_js_1.BrowserTabNotFoundError(`Tab not found: ${targetId}. Use action="tabs" to list open tabs.`);
+    }
+    // No targetId — prefer last used tab
+    if (lastTargetId && pages.has(lastTargetId)) {
+        return pages.get(lastTargetId);
     }
     const entries = [...pages.entries()];
     if (entries.length === 0)
-        throw new Error("No open tabs. Use action='open' to open a tab.");
-    return entries[entries.length - 1][1];
+        throw new errors_js_1.BrowserTabNotFoundError("No open tabs. Use action='open' to open a tab.");
+    const [id, page] = entries[entries.length - 1];
+    lastTargetId = id;
+    return page;
 }
 function getTargetId(page) {
     for (const [id, p] of pages) {
@@ -469,6 +519,8 @@ async function closeTab(targetId) {
         if (page) {
             await page.close();
             pages.delete(targetId);
+            if (lastTargetId === targetId)
+                lastTargetId = null;
         }
     }
     else {
@@ -477,6 +529,8 @@ async function closeTab(targetId) {
             const [id, page] = entries[entries.length - 1];
             await page.close();
             pages.delete(id);
+            if (lastTargetId === id)
+                lastTargetId = null;
         }
     }
 }
@@ -500,6 +554,7 @@ async function closeBrowser() {
     context = null;
     browser = null;
     tabCounter = 0;
+    lastTargetId = null;
 }
 // ---------------------------------------------------------------------------
 // SPA Navigation Recovery

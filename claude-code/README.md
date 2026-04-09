@@ -1,6 +1,6 @@
 # opennavi-browser
 
-Claude Code plugin for browser automation with OpenNavi integration. Single-tool MCP server with snapshot+act pattern.
+Claude Code plugin for browser automation with OpenNavi integration. Single-tool MCP server with snapshot+act pattern, connected via CDP (Chrome DevTools Protocol) to the real browser on your machine.
 
 ## Requirements
 

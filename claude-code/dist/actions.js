@@ -6,6 +6,7 @@ const node_os_1 = require("node:os");
 const node_path_1 = require("node:path");
 const promises_1 = require("node:fs/promises");
 const node_crypto_1 = require("node:crypto");
+const errors_js_1 = require("./errors.js");
 // ---------------------------------------------------------------------------
 // Timeout helpers (ported from OpenClaw pw-tools-core.shared.ts)
 // ---------------------------------------------------------------------------
@@ -19,7 +20,7 @@ const MAX_BATCH_ACTIONS = 100;
 const MAX_BATCH_DEPTH = 5;
 function requireRef(request) {
     if (!request.ref)
-        throw new Error(`ref is required for action kind="${request.kind}"`);
+        throw new errors_js_1.BrowserValidationError(`ref is required for action kind="${request.kind}"`);
     return request.ref;
 }
 // ---------------------------------------------------------------------------
@@ -72,7 +73,7 @@ async function executeAct(page, request, depth = 0) {
         case "press": {
             const key = request.key;
             if (!key)
-                throw new Error("key is required for action kind='press'");
+                throw new errors_js_1.BrowserValidationError("key is required for action kind='press'");
             if (request.ref) {
                 await (0, refs_js_1.refLocator)(page, request.ref).press(key);
             }
@@ -97,7 +98,7 @@ async function executeAct(page, request, depth = 0) {
             const startRef = request.startRef;
             const endRef = request.endRef;
             if (!startRef || !endRef)
-                throw new Error("startRef and endRef are required for drag");
+                throw new errors_js_1.BrowserValidationError("startRef and endRef are required for drag");
             const source = (0, refs_js_1.refLocator)(page, startRef);
             const target = (0, refs_js_1.refLocator)(page, endRef);
             await source.dragTo(target);
@@ -106,7 +107,7 @@ async function executeAct(page, request, depth = 0) {
         case "fill": {
             const fields = request.fields;
             if (!fields?.length)
-                throw new Error("fields array is required for fill");
+                throw new errors_js_1.BrowserValidationError("fields array is required for fill");
             const timeout = normalizeTimeout(request.timeoutMs, 8_000);
             for (const field of fields) {
                 await (0, refs_js_1.refLocator)(page, field.ref).fill(field.value, { timeout });
@@ -160,7 +161,7 @@ async function executeAct(page, request, depth = 0) {
         case "evaluate": {
             const fnText = request.fn;
             if (!fnText)
-                throw new Error("fn is required for evaluate");
+                throw new errors_js_1.BrowserValidationError("fn is required for evaluate");
             const outerTimeout = normalizeTimeout(request.timeoutMs, 20_000);
             // Leave 500ms headroom for routing/serialization
             const evaluateTimeout = Math.max(1000, Math.min(120_000, outerTimeout - 500));
@@ -276,7 +277,7 @@ async function executeAct(page, request, depth = 0) {
         case "responseBody": {
             const pattern = request.urlPattern ?? request.url;
             if (!pattern)
-                throw new Error("urlPattern or url is required for responseBody");
+                throw new errors_js_1.BrowserValidationError("urlPattern or url is required for responseBody");
             const timeout = normalizeTimeout(request.timeoutMs, 20_000);
             const maxChars = Math.max(1, Math.min(5_000_000, request.maxChars ?? 200_000));
             const resp = await new Promise((resolve, reject) => {
@@ -335,11 +336,11 @@ async function executeAct(page, request, depth = 0) {
         case "batch": {
             const actions = request.actions;
             if (!actions?.length)
-                throw new Error("actions array is required for batch");
+                throw new errors_js_1.BrowserValidationError("actions array is required for batch");
             if (actions.length > MAX_BATCH_ACTIONS)
-                throw new Error(`batch supports at most ${MAX_BATCH_ACTIONS} actions`);
+                throw new errors_js_1.BrowserValidationError(`batch supports at most ${MAX_BATCH_ACTIONS} actions`);
             if (depth >= MAX_BATCH_DEPTH)
-                throw new Error(`batch nesting depth exceeded (max ${MAX_BATCH_DEPTH})`);
+                throw new errors_js_1.BrowserValidationError(`batch nesting depth exceeded (max ${MAX_BATCH_DEPTH})`);
             const stopOnError = request.stopOnError ?? true;
             const results = [];
             for (let i = 0; i < actions.length; i++) {

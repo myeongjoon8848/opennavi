@@ -3,6 +3,7 @@ import { spawn, execFileSync, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, symlinkSync, readlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { BrowserTabNotFoundError, BrowserConnectionError } from "./errors.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -407,6 +408,12 @@ let context: BrowserContext | null = null;
 const pages = new Map<string, Page>();
 let tabCounter = 0;
 
+/** Last used tab — auto-selected when targetId is omitted */
+let lastTargetId: string | null = null;
+
+/** Pending connection promise — deduplicates concurrent ensureBrowser() calls */
+let connectingPromise: Promise<BrowserContext> | null = null;
+
 function nextTargetId(): string {
   return `tab-${++tabCounter}`;
 }
@@ -419,10 +426,23 @@ export function getContext(): BrowserContext | null {
  * Connect to the user's Chrome via CDP.
  * If Chrome is not running, auto-launch it with --remote-debugging-port.
  * Retries connection up to 3 times with backoff.
+ *
+ * Concurrent calls are deduplicated — only one connection attempt runs at a time.
  */
 export async function ensureBrowser(): Promise<BrowserContext> {
   if (context && browser?.isConnected()) return context;
 
+  // Deduplicate concurrent connection attempts
+  if (connectingPromise) return connectingPromise;
+
+  connectingPromise = connectBrowserInternal().finally(() => {
+    connectingPromise = null;
+  });
+
+  return connectingPromise;
+}
+
+async function connectBrowserInternal(): Promise<BrowserContext> {
   await closeBrowser();
 
   // Auto-launch Chrome if not already running with CDP
@@ -437,15 +457,24 @@ export async function ensureBrowser(): Promise<BrowserContext> {
       break;
     } catch (err) {
       lastErr = err;
+      // Don't retry rate-limit errors
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("rate limit")) break;
       await new Promise((r) => setTimeout(r, 250 + attempt * 250));
     }
   }
 
   if (!browser?.isConnected()) {
-    throw new Error(
+    throw new BrowserConnectionError(
       `Chrome CDP에 연결할 수 없습니다 (${CDP_URL}).\n원인: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`,
     );
   }
+
+  // Auto-cleanup on unexpected disconnect
+  browser.on("disconnected", () => {
+    context = null;
+    browser = null;
+  });
 
   // Use the first existing context (user's real session)
   context = browser.contexts()[0] ?? await browser.newContext();
@@ -507,15 +536,47 @@ export async function openTab(
   return { targetId: id, page };
 }
 
+/**
+ * Resolve a tab by targetId.
+ * - Exact match first, then prefix match (e.g. "tab-1" matches "tab-12" only if unique).
+ * - If targetId is omitted, returns the last used tab or the most recent tab.
+ * - Updates lastTargetId on every successful resolution.
+ */
 export function getPage(targetId?: string): Page {
   if (targetId) {
-    const page = pages.get(targetId);
-    if (!page) throw new Error(`Tab not found: ${targetId}. Use action="tabs" to list open tabs.`);
-    return page;
+    // Exact match
+    const exact = pages.get(targetId);
+    if (exact) {
+      lastTargetId = targetId;
+      return exact;
+    }
+
+    // Prefix match — only if unambiguous
+    const lower = targetId.toLowerCase();
+    const matches = [...pages.keys()].filter((id) => id.toLowerCase().startsWith(lower));
+    if (matches.length === 1) {
+      lastTargetId = matches[0]!;
+      return pages.get(matches[0]!)!;
+    }
+    if (matches.length > 1) {
+      throw new BrowserTabNotFoundError(
+        `Ambiguous targetId "${targetId}" matches ${matches.length} tabs: ${matches.join(", ")}. Use a more specific targetId.`,
+      );
+    }
+
+    throw new BrowserTabNotFoundError(`Tab not found: ${targetId}. Use action="tabs" to list open tabs.`);
   }
+
+  // No targetId — prefer last used tab
+  if (lastTargetId && pages.has(lastTargetId)) {
+    return pages.get(lastTargetId)!;
+  }
+
   const entries = [...pages.entries()];
-  if (entries.length === 0) throw new Error("No open tabs. Use action='open' to open a tab.");
-  return entries[entries.length - 1]![1];
+  if (entries.length === 0) throw new BrowserTabNotFoundError("No open tabs. Use action='open' to open a tab.");
+  const [id, page] = entries[entries.length - 1]!;
+  lastTargetId = id;
+  return page;
 }
 
 export function getTargetId(page: Page): string | undefined {
@@ -539,6 +600,7 @@ export async function closeTab(targetId?: string): Promise<void> {
     if (page) {
       await page.close();
       pages.delete(targetId);
+      if (lastTargetId === targetId) lastTargetId = null;
     }
   } else {
     const entries = [...pages.entries()];
@@ -546,6 +608,7 @@ export async function closeTab(targetId?: string): Promise<void> {
       const [id, page] = entries[entries.length - 1]!;
       await page.close();
       pages.delete(id);
+      if (lastTargetId === id) lastTargetId = null;
     }
   }
 }
@@ -564,6 +627,7 @@ export async function closeBrowser(): Promise<void> {
   context = null;
   browser = null;
   tabCounter = 0;
+  lastTargetId = null;
 }
 
 // ---------------------------------------------------------------------------

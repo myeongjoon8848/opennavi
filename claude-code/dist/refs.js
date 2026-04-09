@@ -53,11 +53,14 @@ function removeNthFromNonDuplicates(refs, tracker) {
 }
 // --- Ref Parsing ---
 function parseRef(raw) {
-    const normalized = raw.startsWith("@")
-        ? raw.slice(1)
-        : raw.startsWith("ref=")
-            ? raw.slice(4)
-            : raw;
+    const trimmed = raw.trim();
+    if (!trimmed)
+        return null;
+    const normalized = trimmed.startsWith("@")
+        ? trimmed.slice(1)
+        : trimmed.startsWith("ref=")
+            ? trimmed.slice(4)
+            : trimmed;
     return /^e\d+$/.test(normalized) ? normalized : null;
 }
 function parseAiSnapshotRef(suffix) {
@@ -198,17 +201,49 @@ function buildRefsFromAriaSnapshot(ariaSnapshot, options = {}) {
     const tree = out.join("\n") || (options.interactive ? "(no interactive elements)" : "(empty)");
     return { snapshot: compactTree(tree, options.compact), refs };
 }
+/**
+ * Smart compact tree: removes structural nodes that have no descendant refs.
+ * Keeps a node if:
+ *   - it has a [ref=...] tag, OR
+ *   - it has content after the role (not just a trailing colon), OR
+ *   - any descendant (by indent level) has a [ref=...] tag
+ */
 function compactTree(text, compact) {
     if (!compact)
         return text;
-    // Remove lines that are just structural wrappers with no content
     const lines = text.split("\n");
     const result = [];
-    for (const line of lines) {
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
         const trimmed = line.trim();
-        if (trimmed === "-" || trimmed === "")
+        // Drop empty lines and bare dashes
+        if (trimmed === "" || trimmed === "-")
             continue;
-        result.push(line);
+        // Always keep lines with refs
+        if (line.includes("[ref=")) {
+            result.push(line);
+            continue;
+        }
+        // Keep lines that have actual content (not just a structural wrapper ending with ":")
+        if (trimmed.includes(":") && !trimmed.endsWith(":")) {
+            result.push(line);
+            continue;
+        }
+        // For structural wrappers, scan descendants to see if any have refs
+        const currentIndent = getIndentLevel(line);
+        let hasRelevantDescendant = false;
+        for (let j = i + 1; j < lines.length; j++) {
+            const childIndent = getIndentLevel(lines[j]);
+            if (childIndent <= currentIndent)
+                break; // left sibling/parent scope
+            if (lines[j].includes("[ref=")) {
+                hasRelevantDescendant = true;
+                break;
+            }
+        }
+        if (hasRelevantDescendant) {
+            result.push(line);
+        }
     }
     return result.join("\n");
 }

@@ -16,13 +16,14 @@ OpenNavi maintains a shared **site map registry**. When any agent visits a site,
 
 ## Browser Tool
 
-OpenNavi ships with a powerful browser automation tool built on Playwright — a single unified `browser` tool that does everything:
+OpenNavi ships with a powerful browser automation tool built on [Playwright](https://playwright.dev/) — a single unified `browser` tool that does everything:
 
+- **CDP-only architecture** — connects to Chrome/Chromium via the [Chrome DevTools Protocol](https://chromedevtools.github.io/devtools-protocol/). No bundled browser, no WebDriver — just a direct CDP connection to the real browser on your machine. This means you get your existing cookies, sessions, and extensions out of the box.
 - **Snapshot + Act pattern** — get a structured DOM snapshot with element refs (`e1`, `e2`, ...), then act on them directly. No selectors to guess, no flaky XPaths.
 - **Smart interactions** — click, type, fill forms, drag & drop, select dropdowns, press keys, hover, run JavaScript — all through one tool.
 - **Batch actions** — chain up to 100 actions in a single call for complex workflows.
 - **Screenshots with labels** — visual debugging with ref badges overlaid on the page.
-- **Console access** — read browser console logs and errors for debugging.
+- **Console & network access** — read browser console logs, errors, and network requests for debugging.
 - **Multi-tab support** — open, switch, and manage multiple tabs.
 - **SPA-aware** — handles single-page app navigation and route changes gracefully.
 

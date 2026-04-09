@@ -34,12 +34,20 @@ export declare function getContext(): BrowserContext | null;
  * Connect to the user's Chrome via CDP.
  * If Chrome is not running, auto-launch it with --remote-debugging-port.
  * Retries connection up to 3 times with backoff.
+ *
+ * Concurrent calls are deduplicated — only one connection attempt runs at a time.
  */
 export declare function ensureBrowser(): Promise<BrowserContext>;
 export declare function openTab(url?: string, timeoutMs?: number): Promise<{
     targetId: string;
     page: Page;
 }>;
+/**
+ * Resolve a tab by targetId.
+ * - Exact match first, then prefix match (e.g. "tab-1" matches "tab-12" only if unique).
+ * - If targetId is omitted, returns the last used tab or the most recent tab.
+ * - Updates lastTargetId on every successful resolution.
+ */
 export declare function getPage(targetId?: string): Page;
 export declare function getTargetId(page: Page): string | undefined;
 export declare function listTabs(): TabInfo[];

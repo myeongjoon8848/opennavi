@@ -1,8 +1,63 @@
+// ---------------------------------------------------------------------------
+// Typed error hierarchy
+// ---------------------------------------------------------------------------
+
+/**
+ * Base error class for all browser-related errors.
+ * Carries a semantic status code for structured error handling.
+ */
+export class BrowserError extends Error {
+  status: number;
+
+  constructor(message: string, status = 500, options?: ErrorOptions) {
+    super(message, options);
+    this.name = new.target.name;
+    this.status = status;
+  }
+}
+
+/** 400 — invalid input parameters */
+export class BrowserValidationError extends BrowserError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, 400, options);
+  }
+}
+
+/** 404 — tab not found */
+export class BrowserTabNotFoundError extends BrowserError {
+  constructor(message = "Tab not found. Use action='tabs' to list open tabs.", options?: ErrorOptions) {
+    super(message, 404, options);
+  }
+}
+
+/** 400 — navigation blocked by SSRF guard */
+export class BrowserNavigationBlockedError extends BrowserError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, 400, options);
+  }
+}
+
+/** 503 — browser connection unavailable */
+export class BrowserConnectionError extends BrowserError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, 503, options);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// AI-friendly error transformation
+// ---------------------------------------------------------------------------
+
 /**
  * Transforms raw Playwright errors into actionable, AI-friendly messages
  * that guide the agent toward the correct recovery action.
  */
 export function toAIFriendlyError(err: unknown): string {
+  // Typed errors already have clear messages
+  if (err instanceof BrowserError) {
+    return err.message;
+  }
+
   const raw = err instanceof Error ? err.message : String(err);
 
   // Timeout errors
@@ -52,6 +107,11 @@ export function toAIFriendlyError(err: unknown): string {
     return `${raw}`;
   }
 
+  // Navigation blocked (SSRF)
+  if (raw.includes("Navigation blocked")) {
+    return `${raw}`;
+  }
+
   // Navigation errors
   if (raw.includes("net::ERR_NAME_NOT_RESOLVED")) {
     return `DNS resolution failed — the domain could not be found. Check the URL for typos.`;
@@ -63,6 +123,6 @@ export function toAIFriendlyError(err: unknown): string {
     return `SSL/TLS certificate error. The site's certificate is invalid or expired.`;
   }
 
-  // Default: return original with suggestion
+  // Default: return original
   return raw;
 }

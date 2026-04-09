@@ -1,11 +1,63 @@
 "use strict";
+// ---------------------------------------------------------------------------
+// Typed error hierarchy
+// ---------------------------------------------------------------------------
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.BrowserConnectionError = exports.BrowserNavigationBlockedError = exports.BrowserTabNotFoundError = exports.BrowserValidationError = exports.BrowserError = void 0;
 exports.toAIFriendlyError = toAIFriendlyError;
+/**
+ * Base error class for all browser-related errors.
+ * Carries a semantic status code for structured error handling.
+ */
+class BrowserError extends Error {
+    status;
+    constructor(message, status = 500, options) {
+        super(message, options);
+        this.name = new.target.name;
+        this.status = status;
+    }
+}
+exports.BrowserError = BrowserError;
+/** 400 — invalid input parameters */
+class BrowserValidationError extends BrowserError {
+    constructor(message, options) {
+        super(message, 400, options);
+    }
+}
+exports.BrowserValidationError = BrowserValidationError;
+/** 404 — tab not found */
+class BrowserTabNotFoundError extends BrowserError {
+    constructor(message = "Tab not found. Use action='tabs' to list open tabs.", options) {
+        super(message, 404, options);
+    }
+}
+exports.BrowserTabNotFoundError = BrowserTabNotFoundError;
+/** 400 — navigation blocked by SSRF guard */
+class BrowserNavigationBlockedError extends BrowserError {
+    constructor(message, options) {
+        super(message, 400, options);
+    }
+}
+exports.BrowserNavigationBlockedError = BrowserNavigationBlockedError;
+/** 503 — browser connection unavailable */
+class BrowserConnectionError extends BrowserError {
+    constructor(message, options) {
+        super(message, 503, options);
+    }
+}
+exports.BrowserConnectionError = BrowserConnectionError;
+// ---------------------------------------------------------------------------
+// AI-friendly error transformation
+// ---------------------------------------------------------------------------
 /**
  * Transforms raw Playwright errors into actionable, AI-friendly messages
  * that guide the agent toward the correct recovery action.
  */
 function toAIFriendlyError(err) {
+    // Typed errors already have clear messages
+    if (err instanceof BrowserError) {
+        return err.message;
+    }
     const raw = err instanceof Error ? err.message : String(err);
     // Timeout errors
     if (raw.includes("Timeout") && raw.includes("exceeded")) {
@@ -46,6 +98,10 @@ function toAIFriendlyError(err) {
     if (raw.includes("No open tabs")) {
         return `${raw}`;
     }
+    // Navigation blocked (SSRF)
+    if (raw.includes("Navigation blocked")) {
+        return `${raw}`;
+    }
     // Navigation errors
     if (raw.includes("net::ERR_NAME_NOT_RESOLVED")) {
         return `DNS resolution failed — the domain could not be found. Check the URL for typos.`;
@@ -56,6 +112,6 @@ function toAIFriendlyError(err) {
     if (raw.includes("net::ERR_CERT")) {
         return `SSL/TLS certificate error. The site's certificate is invalid or expired.`;
     }
-    // Default: return original with suggestion
+    // Default: return original
     return raw;
 }
