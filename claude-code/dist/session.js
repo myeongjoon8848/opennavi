@@ -1,5 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.markTargetBlocked = markTargetBlocked;
+exports.isTargetBlocked = isTargetBlocked;
 exports.getConsoleLogs = getConsoleLogs;
 exports.getPageErrors = getPageErrors;
 exports.getNetworkRequests = getNetworkRequests;
@@ -12,6 +14,7 @@ exports.getTargetId = getTargetId;
 exports.listTabs = listTabs;
 exports.closeTab = closeTab;
 exports.closeBrowser = closeBrowser;
+exports.forceReconnect = forceReconnect;
 exports.resolveTargetIdAfterNavigate = resolveTargetIdAfterNavigate;
 const playwright_core_1 = require("playwright-core");
 const node_child_process_1 = require("node:child_process");
@@ -246,6 +249,32 @@ async function launchChromeWithCdp() {
     ].join("\n"));
 }
 // ---------------------------------------------------------------------------
+// Blocked target tracking (ported from OpenClaw)
+// ---------------------------------------------------------------------------
+/** Targets quarantined after an SSRF policy violation */
+const blockedTargets = new Set();
+/**
+ * Quarantine a tab after an SSRF violation.
+ * The tab is closed and future access is blocked.
+ */
+async function markTargetBlocked(targetId) {
+    blockedTargets.add(targetId);
+    const page = pages.get(targetId);
+    if (page) {
+        try {
+            await page.close();
+        }
+        catch { }
+        pages.delete(targetId);
+        clearPageState(targetId);
+        if (lastTargetId === targetId)
+            lastTargetId = null;
+    }
+}
+function isTargetBlocked(targetId) {
+    return blockedTargets.has(targetId);
+}
+// ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 const MAX_CONSOLE_ENTRIES = 500;
@@ -476,6 +505,10 @@ async function openTab(url, timeoutMs) {
  */
 function getPage(targetId) {
     if (targetId) {
+        // Check if target is blocked (SSRF quarantine)
+        if (isTargetBlocked(targetId)) {
+            throw new errors_js_1.BrowserTabNotFoundError(`Tab "${targetId}" is unavailable — it was closed after an SSRF policy violation. Use action="tabs" to find available tabs.`);
+        }
         // Exact match
         const exact = pages.get(targetId);
         if (exact) {
@@ -550,6 +583,7 @@ async function closeBrowser() {
             await page.close();
         }
         catch { }
+        clearPageState(id);
         pages.delete(id);
     }
     // Disconnect Playwright from Chrome (doesn't close Chrome itself)
@@ -561,6 +595,27 @@ async function closeBrowser() {
     browser = null;
     tabCounter = 0;
     lastTargetId = null;
+    blockedTargets.clear();
+}
+// ---------------------------------------------------------------------------
+// Force reconnect (ported from OpenClaw forceDisconnectPlaywrightForTarget)
+// ---------------------------------------------------------------------------
+/**
+ * Force-disconnect and reconnect to Chrome CDP.
+ * Used when frame-detached or target-closed errors indicate a stale connection.
+ * Returns the refreshed BrowserContext.
+ */
+async function forceReconnect() {
+    // Clear cached state without closing Chrome itself
+    try {
+        await browser?.close();
+    }
+    catch { }
+    context = null;
+    browser = null;
+    connectingPromise = null;
+    // Re-establish connection
+    return ensureBrowser();
 }
 // ---------------------------------------------------------------------------
 // SPA Navigation Recovery

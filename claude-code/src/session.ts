@@ -288,6 +288,32 @@ async function launchChromeWithCdp(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Blocked target tracking (ported from OpenClaw)
+// ---------------------------------------------------------------------------
+
+/** Targets quarantined after an SSRF policy violation */
+const blockedTargets = new Set<string>();
+
+/**
+ * Quarantine a tab after an SSRF violation.
+ * The tab is closed and future access is blocked.
+ */
+export async function markTargetBlocked(targetId: string): Promise<void> {
+  blockedTargets.add(targetId);
+  const page = pages.get(targetId);
+  if (page) {
+    try { await page.close(); } catch {}
+    pages.delete(targetId);
+    clearPageState(targetId);
+    if (lastTargetId === targetId) lastTargetId = null;
+  }
+}
+
+export function isTargetBlocked(targetId: string): boolean {
+  return blockedTargets.has(targetId);
+}
+
+// ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
@@ -552,6 +578,13 @@ export async function openTab(
  */
 export function getPage(targetId?: string): Page {
   if (targetId) {
+    // Check if target is blocked (SSRF quarantine)
+    if (isTargetBlocked(targetId)) {
+      throw new BrowserTabNotFoundError(
+        `Tab "${targetId}" is unavailable — it was closed after an SSRF policy violation. Use action="tabs" to find available tabs.`,
+      );
+    }
+
     // Exact match
     const exact = pages.get(targetId);
     if (exact) {
@@ -628,6 +661,7 @@ export async function closeTab(targetId?: string): Promise<void> {
 export async function closeBrowser(): Promise<void> {
   for (const [id, page] of pages) {
     try { await page.close(); } catch {}
+    clearPageState(id);
     pages.delete(id);
   }
   // Disconnect Playwright from Chrome (doesn't close Chrome itself)
@@ -636,6 +670,27 @@ export async function closeBrowser(): Promise<void> {
   browser = null;
   tabCounter = 0;
   lastTargetId = null;
+  blockedTargets.clear();
+}
+
+// ---------------------------------------------------------------------------
+// Force reconnect (ported from OpenClaw forceDisconnectPlaywrightForTarget)
+// ---------------------------------------------------------------------------
+
+/**
+ * Force-disconnect and reconnect to Chrome CDP.
+ * Used when frame-detached or target-closed errors indicate a stale connection.
+ * Returns the refreshed BrowserContext.
+ */
+export async function forceReconnect(): Promise<BrowserContext> {
+  // Clear cached state without closing Chrome itself
+  try { await browser?.close(); } catch {}
+  context = null;
+  browser = null;
+  connectingPromise = null;
+
+  // Re-establish connection
+  return ensureBrowser();
 }
 
 // ---------------------------------------------------------------------------

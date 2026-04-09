@@ -7,6 +7,7 @@ const node_path_1 = require("node:path");
 const promises_1 = require("node:fs/promises");
 const node_crypto_1 = require("node:crypto");
 const errors_js_1 = require("./errors.js");
+const navigation_guard_js_1 = require("./navigation-guard.js");
 // ---------------------------------------------------------------------------
 // Timeout helpers (ported from OpenClaw pw-tools-core.shared.ts)
 // ---------------------------------------------------------------------------
@@ -26,32 +27,36 @@ function requireRef(request) {
 // ---------------------------------------------------------------------------
 // Core action executor
 // ---------------------------------------------------------------------------
-async function executeAct(page, request, depth = 0) {
+async function executeAct(page, request, depth = 0, ssrfPolicy) {
     switch (request.kind) {
         case "click": {
             const ref = requireRef(request);
             const locator = (0, refs_js_1.refLocator)(page, ref);
             const timeout = normalizeTimeout(request.timeoutMs, 8_000);
-            const opts = { timeout };
+            const clickOpts = { timeout };
             if (request.button)
-                opts.button = request.button;
+                clickOpts.button = request.button;
             if (request.modifiers?.length) {
-                opts.modifiers = request.modifiers;
+                clickOpts.modifiers = request.modifiers;
             }
-            // Click delay: clamp to MAX_CLICK_DELAY_MS
-            if (request.delayMs) {
-                const delay = Math.max(0, Math.min(MAX_CLICK_DELAY_MS, request.delayMs));
-                if (delay > 0) {
-                    await locator.hover({ timeout });
-                    await page.waitForTimeout(delay);
+            const doClick = async () => {
+                // Click delay: clamp to MAX_CLICK_DELAY_MS
+                if (request.delayMs) {
+                    const delay = Math.max(0, Math.min(MAX_CLICK_DELAY_MS, request.delayMs));
+                    if (delay > 0) {
+                        await locator.hover({ timeout });
+                        await page.waitForTimeout(delay);
+                    }
                 }
-            }
-            if (request.doubleClick) {
-                await locator.dblclick(opts);
-            }
-            else {
-                await locator.click(opts);
-            }
+                if (request.doubleClick) {
+                    await locator.dblclick(clickOpts);
+                }
+                else {
+                    await locator.click(clickOpts);
+                }
+            };
+            // Clicks can trigger navigation — validate against SSRF policy
+            await (0, navigation_guard_js_1.assertInteractionNavigationSafe)({ action: doClick, page, policy: ssrfPolicy });
             return { ok: true };
         }
         case "type": {
@@ -59,14 +64,23 @@ async function executeAct(page, request, depth = 0) {
             const text = request.text ?? "";
             const locator = (0, refs_js_1.refLocator)(page, ref);
             const timeout = normalizeTimeout(request.timeoutMs, 8_000);
-            if (request.slowly) {
-                await locator.pressSequentially(text, { delay: 75, timeout });
+            const doType = async () => {
+                if (request.slowly) {
+                    await locator.pressSequentially(text, { delay: 75, timeout });
+                }
+                else {
+                    await locator.fill(text, { timeout });
+                }
+                if (request.submit) {
+                    await locator.press("Enter");
+                }
+            };
+            // Form submit can trigger navigation — validate against SSRF policy
+            if (request.submit) {
+                await (0, navigation_guard_js_1.assertInteractionNavigationSafe)({ action: doType, page, policy: ssrfPolicy });
             }
             else {
-                await locator.fill(text, { timeout });
-            }
-            if (request.submit) {
-                await locator.press("Enter");
+                await doType();
             }
             return { ok: true };
         }
@@ -355,7 +369,7 @@ async function executeAct(page, request, depth = 0) {
                     }
                 }
                 try {
-                    const result = await executeAct(page, action, depth + 1);
+                    const result = await executeAct(page, action, depth + 1, ssrfPolicy);
                     results.push({ index: i, ok: true, result });
                 }
                 catch (err) {

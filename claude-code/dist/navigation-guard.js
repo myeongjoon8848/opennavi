@@ -13,6 +13,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.NavigationBlockedError = void 0;
 exports.assertNavigationAllowed = assertNavigationAllowed;
 exports.assertNavigationResultAllowed = assertNavigationResultAllowed;
+exports.assertNoProxyBypass = assertNoProxyBypass;
+exports.assertRedirectChainAllowed = assertRedirectChainAllowed;
+exports.assertInteractionNavigationSafe = assertInteractionNavigationSafe;
 const promises_1 = require("node:dns/promises");
 const node_net_1 = require("node:net");
 const DEFAULT_POLICY = {
@@ -210,4 +213,118 @@ async function assertNavigationResultAllowed(url, policy) {
     if (!url || url === "about:blank" || url.startsWith("data:"))
         return;
     await assertNavigationAllowed(url, policy);
+}
+// ---------------------------------------------------------------------------
+// Proxy bypass detection (ported from OpenClaw)
+// ---------------------------------------------------------------------------
+const PROXY_ENV_KEYS = [
+    "HTTP_PROXY", "http_proxy",
+    "HTTPS_PROXY", "https_proxy",
+    "ALL_PROXY", "all_proxy",
+];
+function hasProxyEnvConfigured() {
+    return PROXY_ENV_KEYS.some((key) => !!process.env[key]);
+}
+/**
+ * Pre-navigation check that detects when proxy env vars could bypass
+ * SSRF protections. When a proxy is configured, the browser may route
+ * requests through it — DNS resolution happens on the proxy server,
+ * not locally, so our IP checks become ineffective.
+ */
+function assertNoProxyBypass(policy) {
+    const resolved = policy ?? DEFAULT_POLICY;
+    if (resolved.allowPrivateNetwork)
+        return;
+    if (!hasProxyEnvConfigured())
+        return;
+    throw new NavigationBlockedError("Navigation blocked: strict SSRF policy cannot be enforced while HTTP proxy env variables (HTTP_PROXY, HTTPS_PROXY) are set. " +
+        "Unset proxy variables or set BROWSER_ALLOW_PRIVATE_NETWORK=true to proceed.");
+}
+// ---------------------------------------------------------------------------
+// Redirect chain validation (ported from OpenClaw)
+// ---------------------------------------------------------------------------
+/**
+ * Validate each URL in a redirect chain against the SSRF policy.
+ * Walks the Playwright Request.redirectedFrom() chain.
+ */
+async function assertRedirectChainAllowed(request, policy) {
+    const chain = [];
+    let current = request;
+    while (current) {
+        chain.push(current.url());
+        current = current.redirectedFrom();
+    }
+    // Walk in chronological order (reversed from the linked list)
+    for (const url of chain.reverse()) {
+        await assertNavigationAllowed(url, policy);
+    }
+}
+// ---------------------------------------------------------------------------
+// Interaction-time navigation guard (ported from OpenClaw)
+// ---------------------------------------------------------------------------
+/**
+ * Detect whether a URL change is a cross-document navigation (not just a hash change).
+ */
+function didCrossDocumentUrlChange(currentUrl, previousUrl) {
+    if (currentUrl === previousUrl)
+        return false;
+    try {
+        const prev = new URL(previousUrl);
+        const curr = new URL(currentUrl);
+        // Only the fragment changed → same-document navigation, no fetch
+        if (prev.origin === curr.origin && prev.pathname === curr.pathname && prev.search === curr.search) {
+            return false;
+        }
+    }
+    catch {
+        // Non-parseable URL; fall through to string comparison
+    }
+    return true;
+}
+/**
+ * Wraps an interaction action (click, type+submit, etc.) and validates
+ * any navigation it triggers against the SSRF policy.
+ *
+ * Three phases:
+ * 1. Listen for framenavigated during the action
+ * 2. After the action, check if the URL changed (cross-document)
+ * 3. If navigation occurred, validate the final URL
+ */
+async function assertInteractionNavigationSafe(opts) {
+    const { action, page, policy } = opts;
+    // Skip if private network is allowed (no SSRF enforcement)
+    if (policy?.allowPrivateNetwork)
+        return action();
+    const previousUrl = page.url();
+    let navigatedDuringAction = false;
+    const onFrameNavigated = (frame) => {
+        // Only track main-frame navigations
+        if (typeof page.mainFrame === "function" && frame !== page.mainFrame())
+            return;
+        // Ignore hash-only changes
+        if (!didCrossDocumentUrlChange(page.url(), previousUrl))
+            return;
+        navigatedDuringAction = true;
+    };
+    page.on("framenavigated", onFrameNavigated);
+    let result;
+    try {
+        result = await action();
+    }
+    finally {
+        page.off("framenavigated", onFrameNavigated);
+    }
+    const navigationOccurred = navigatedDuringAction || didCrossDocumentUrlChange(page.url(), previousUrl);
+    if (navigationOccurred) {
+        // Validate the final URL after the interaction-triggered navigation
+        await assertNavigationResultAllowed(page.url(), policy);
+    }
+    else {
+        // Grace period: some navigations are deferred (e.g. setTimeout after click)
+        await new Promise((r) => setTimeout(r, 250));
+        if (didCrossDocumentUrlChange(page.url(), previousUrl)) {
+            await assertNavigationResultAllowed(page.url(), policy);
+        }
+    }
+    return result;
 }

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { mkdir } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { BrowserValidationError } from "./errors.js";
+import { assertInteractionNavigationSafe, type SsrfPolicy } from "./navigation-guard.js";
 
 // ---------------------------------------------------------------------------
 // Timeout helpers (ported from OpenClaw pw-tools-core.shared.ts)
@@ -84,30 +85,36 @@ function requireRef(request: ActRequest): string {
 // Core action executor
 // ---------------------------------------------------------------------------
 
-export async function executeAct(page: Page, request: ActRequest, depth = 0): Promise<unknown> {
+export async function executeAct(page: Page, request: ActRequest, depth = 0, ssrfPolicy?: SsrfPolicy): Promise<unknown> {
   switch (request.kind) {
     case "click": {
       const ref = requireRef(request);
       const locator = refLocator(page, ref);
       const timeout = normalizeTimeout(request.timeoutMs, 8_000);
-      const opts: Parameters<typeof locator.click>[0] = { timeout };
-      if (request.button) opts.button = request.button;
+      const clickOpts: Parameters<typeof locator.click>[0] = { timeout };
+      if (request.button) clickOpts.button = request.button;
       if (request.modifiers?.length) {
-        opts.modifiers = request.modifiers as Array<"Alt" | "Control" | "Meta" | "Shift">;
+        clickOpts.modifiers = request.modifiers as Array<"Alt" | "Control" | "Meta" | "Shift">;
       }
-      // Click delay: clamp to MAX_CLICK_DELAY_MS
-      if (request.delayMs) {
-        const delay = Math.max(0, Math.min(MAX_CLICK_DELAY_MS, request.delayMs));
-        if (delay > 0) {
-          await locator.hover({ timeout });
-          await page.waitForTimeout(delay);
+
+      const doClick = async () => {
+        // Click delay: clamp to MAX_CLICK_DELAY_MS
+        if (request.delayMs) {
+          const delay = Math.max(0, Math.min(MAX_CLICK_DELAY_MS, request.delayMs));
+          if (delay > 0) {
+            await locator.hover({ timeout });
+            await page.waitForTimeout(delay);
+          }
         }
-      }
-      if (request.doubleClick) {
-        await locator.dblclick(opts);
-      } else {
-        await locator.click(opts);
-      }
+        if (request.doubleClick) {
+          await locator.dblclick(clickOpts);
+        } else {
+          await locator.click(clickOpts);
+        }
+      };
+
+      // Clicks can trigger navigation — validate against SSRF policy
+      await assertInteractionNavigationSafe({ action: doClick, page, policy: ssrfPolicy });
       return { ok: true };
     }
 
@@ -116,13 +123,23 @@ export async function executeAct(page: Page, request: ActRequest, depth = 0): Pr
       const text = request.text ?? "";
       const locator = refLocator(page, ref);
       const timeout = normalizeTimeout(request.timeoutMs, 8_000);
-      if (request.slowly) {
-        await locator.pressSequentially(text, { delay: 75, timeout });
-      } else {
-        await locator.fill(text, { timeout });
-      }
+
+      const doType = async () => {
+        if (request.slowly) {
+          await locator.pressSequentially(text, { delay: 75, timeout });
+        } else {
+          await locator.fill(text, { timeout });
+        }
+        if (request.submit) {
+          await locator.press("Enter");
+        }
+      };
+
+      // Form submit can trigger navigation — validate against SSRF policy
       if (request.submit) {
-        await locator.press("Enter");
+        await assertInteractionNavigationSafe({ action: doType, page, policy: ssrfPolicy });
+      } else {
+        await doType();
       }
       return { ok: true };
     }
@@ -427,7 +444,7 @@ export async function executeAct(page: Page, request: ActRequest, depth = 0): Pr
           }
         }
         try {
-          const result = await executeAct(page, action, depth + 1);
+          const result = await executeAct(page, action, depth + 1, ssrfPolicy);
           results.push({ index: i, ok: true, result });
         } catch (err) {
           const error = err instanceof Error ? err.message : String(err);

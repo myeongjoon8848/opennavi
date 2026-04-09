@@ -1,4 +1,5 @@
 import type { Page } from "playwright-core";
+import { type SsrfPolicy } from "./navigation-guard.js";
 export type ActKind = "click" | "type" | "press" | "hover" | "drag" | "fill" | "select" | "wait" | "evaluate" | "batch" | "scrollIntoView" | "armDialog" | "waitForDownload" | "download" | "responseBody";
 export interface ActRequest {
     kind: ActKind;
@@ -33,4 +34,4 @@ export interface ActRequest {
     urlPattern?: string;
     maxChars?: number;
 }
-export declare function executeAct(page: Page, request: ActRequest, depth?: number): Promise<unknown>;
+export declare function executeAct(page: Page, request: ActRequest, depth?: number, ssrfPolicy?: SsrfPolicy): Promise<unknown>;

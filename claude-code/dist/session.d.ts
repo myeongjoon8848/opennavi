@@ -25,6 +25,12 @@ export interface NetworkRequestEntry {
     failureText?: string;
     timestamp: number;
 }
+/**
+ * Quarantine a tab after an SSRF violation.
+ * The tab is closed and future access is blocked.
+ */
+export declare function markTargetBlocked(targetId: string): Promise<void>;
+export declare function isTargetBlocked(targetId: string): boolean;
 export declare function getConsoleLogs(targetId: string, level?: string): ConsoleEntry[];
 export declare function getPageErrors(targetId: string): PageErrorEntry[];
 export declare function getNetworkRequests(targetId: string): NetworkRequestEntry[];
@@ -57,6 +63,12 @@ export declare function closeTab(targetId?: string): Promise<void>;
  * Chrome itself keeps running.
  */
 export declare function closeBrowser(): Promise<void>;
+/**
+ * Force-disconnect and reconnect to Chrome CDP.
+ * Used when frame-detached or target-closed errors indicate a stale connection.
+ * Returns the refreshed BrowserContext.
+ */
+export declare function forceReconnect(): Promise<BrowserContext>;
 export declare function resolveTargetIdAfterNavigate(opts: {
     oldTargetId: string;
     navigatedUrl: string;
