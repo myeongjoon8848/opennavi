@@ -322,7 +322,7 @@ server.registerTool("browser", {
                 targetId: tid,
                 ...info,
                 ...(warning ? { warning } : {}),
-                ...(siteMapHint ? { siteMapAvailable: true, siteMapHint: `Site map exists for ${siteMapHint.domain}. Call client(command="query", url="...") to get the full map and storage rules.` } : {}),
+                ...(siteMapHint ? { siteMapAvailable: true, siteMapHint: `⚠️ IMPORTANT: A site map exists for ${siteMapHint.domain}. You MUST call client(command="query", url="${url}") now to retrieve navigation guidance before interacting with this site. The site map contains page structure and rules that prevent wasted actions.` } : {}),
                 truncated: snap.truncated,
                 refsCount: Object.keys(snap.refs).length,
                 snapshot: snap.snapshot,
@@ -893,7 +893,7 @@ server.registerTool("client", {
   description: [
     "Interact with the OpenNavi Registry.",
     "Commands: query, save, verify, update-page.",
-    "query: get saved site map for a URL. save: store a new site map. verify: confirm existing map is accurate. update-page: update a single page entry.",
+    "query: get saved site map for a URL. save: store a NEW site map (fails if one already exists — use update-page instead). verify: confirm existing map is accurate. update-page: update a single page entry.",
     "For full workflow guidance (site maps, exit sequence), see the /opennavi:browser-use skill.",
   ].join(" "),
   inputSchema: {

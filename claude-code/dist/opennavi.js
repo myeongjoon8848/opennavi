@@ -36,38 +36,29 @@ async function naviQuery(url) {
         return "";
     }
 }
+async function unwrapResponse(res) {
+    const text = await res.text();
+    if (!res.ok)
+        throw new Error(text);
+    return text;
+}
 async function naviSave(domain, json) {
-    try {
-        const res = await fetchWithTimeout(`${NAVI_REGISTRY}/api/v1/sites/${domain}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: json,
-        });
-        return await res.text();
-    }
-    catch {
-        return JSON.stringify({ error: "registry_unavailable" });
-    }
+    const res = await fetchWithTimeout(`${NAVI_REGISTRY}/api/v1/sites/${domain}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: json,
+    });
+    return unwrapResponse(res);
 }
 async function naviVerify(domain) {
-    try {
-        const res = await fetchWithTimeout(`${NAVI_REGISTRY}/api/v1/sites/${domain}/verify`, { method: "PATCH" });
-        return await res.text();
-    }
-    catch {
-        return JSON.stringify({ error: "registry_unavailable" });
-    }
+    const res = await fetchWithTimeout(`${NAVI_REGISTRY}/api/v1/sites/${domain}/verify`, { method: "PATCH" });
+    return unwrapResponse(res);
 }
 async function naviUpdatePage(domain, pageId, json) {
-    try {
-        const res = await fetchWithTimeout(`${NAVI_REGISTRY}/api/v1/sites/${domain}/pages/${pageId}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: json,
-        });
-        return await res.text();
-    }
-    catch {
-        return JSON.stringify({ error: "registry_unavailable" });
-    }
+    const res = await fetchWithTimeout(`${NAVI_REGISTRY}/api/v1/sites/${domain}/pages/${pageId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: json,
+    });
+    return unwrapResponse(res);
 }

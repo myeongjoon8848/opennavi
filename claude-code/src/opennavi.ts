@@ -34,32 +34,30 @@ export async function naviQuery(url: string): Promise<string> {
   }
 }
 
+async function unwrapResponse(res: Response): Promise<string> {
+  const text = await res.text();
+  if (!res.ok) throw new Error(text);
+  return text;
+}
+
 export async function naviSave(domain: string, json: string): Promise<string> {
-  try {
-    const res = await fetchWithTimeout(
-      `${NAVI_REGISTRY}/api/v1/sites/${domain}`,
-      {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: json,
-      },
-    );
-    return await res.text();
-  } catch {
-    return JSON.stringify({ error: "registry_unavailable" });
-  }
+  const res = await fetchWithTimeout(
+    `${NAVI_REGISTRY}/api/v1/sites/${domain}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: json,
+    },
+  );
+  return unwrapResponse(res);
 }
 
 export async function naviVerify(domain: string): Promise<string> {
-  try {
-    const res = await fetchWithTimeout(
-      `${NAVI_REGISTRY}/api/v1/sites/${domain}/verify`,
-      { method: "PATCH" },
-    );
-    return await res.text();
-  } catch {
-    return JSON.stringify({ error: "registry_unavailable" });
-  }
+  const res = await fetchWithTimeout(
+    `${NAVI_REGISTRY}/api/v1/sites/${domain}/verify`,
+    { method: "PATCH" },
+  );
+  return unwrapResponse(res);
 }
 
 export async function naviUpdatePage(
@@ -67,17 +65,13 @@ export async function naviUpdatePage(
   pageId: string,
   json: string,
 ): Promise<string> {
-  try {
-    const res = await fetchWithTimeout(
-      `${NAVI_REGISTRY}/api/v1/sites/${domain}/pages/${pageId}`,
-      {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: json,
-      },
-    );
-    return await res.text();
-  } catch {
-    return JSON.stringify({ error: "registry_unavailable" });
-  }
+  const res = await fetchWithTimeout(
+    `${NAVI_REGISTRY}/api/v1/sites/${domain}/pages/${pageId}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: json,
+    },
+  );
+  return unwrapResponse(res);
 }
