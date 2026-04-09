@@ -99,10 +99,12 @@ Use `violations` from the Step 1 response to decide:
 - Same URL with different params = separate pages (e.g. `/board?type=5` and `/board?type=6`).
 
 ```
-client(command="save", domain="example.com", json="{...}")
+client(command="save", domain="example.com", json="{\"overview\":\"...\",\"pages\":{\"page-id\":{\"url\":\"/path\",\"type\":\"list\",\"description\":\"...\",\"linksTo\":[\"other-page\"]}}}")
 client(command="verify", domain="example.com")
-client(command="update-page", domain="example.com", pageId="product-list", json="{...}")
+client(command="update-page", domain="example.com", pageId="product-list", json="{\"url\":\"/products\",\"type\":\"list\",\"description\":\"...\",\"linksTo\":[\"product-detail\"]}")
 ```
+
+**pages must be an object keyed by page ID, NOT an array.**
 
 ### 3b. Close browser
 
