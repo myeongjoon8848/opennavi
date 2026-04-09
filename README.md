@@ -68,10 +68,10 @@ Coming soon. ASM is designed to integrate with any AI agent platform that suppor
 
 ### Claude Code
 
-1. Update the plugin:
+1. Update from the marketplace:
 
    ```
-   /plugin update asm@myeongjoon8848-asm-integrations
+   /plugin marketplace update asm-integrations
    ```
 
 2. Reload plugins or restart your session:
