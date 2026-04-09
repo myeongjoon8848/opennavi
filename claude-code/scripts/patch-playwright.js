@@ -9,9 +9,11 @@
 const fs = require("fs");
 const path = require("path");
 
+// Support custom base dir as first argument (used by .mcp.json for plugin data dir)
+const baseDir = process.argv[2] || path.join(__dirname, "..");
+
 const target = path.join(
-  __dirname,
-  "..",
+  baseDir,
   "node_modules",
   "playwright-core",
   "lib",
