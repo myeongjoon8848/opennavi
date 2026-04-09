@@ -608,14 +608,16 @@ export function getPage(targetId?: string): Page {
     throw new BrowserTabNotFoundError(`Tab not found: ${targetId}. Use action="tabs" to list open tabs.`);
   }
 
-  // No targetId — prefer last used tab
-  if (lastTargetId && pages.has(lastTargetId)) {
-    return pages.get(lastTargetId)!;
-  }
-
+  // No targetId — require explicit targetId when multiple tabs are open
   const entries = [...pages.entries()];
   if (entries.length === 0) throw new BrowserTabNotFoundError("No open tabs. Use action='open' to open a tab.");
-  const [id, page] = entries[entries.length - 1]!;
+  if (entries.length > 1) {
+    const tabList = entries.map(([id]) => id).join(", ");
+    throw new BrowserTabNotFoundError(
+      `Multiple tabs open (${tabList}) — targetId is required. Use action="tabs" to list tabs, then pass targetId to target a specific tab.`,
+    );
+  }
+  const [id, page] = entries[0]!;
   lastTargetId = id;
   return page;
 }

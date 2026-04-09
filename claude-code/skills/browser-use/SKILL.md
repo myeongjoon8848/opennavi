@@ -28,11 +28,24 @@ If a record exists, use it for navigation.
 
 ## Step 2: Browse
 
+### Tab Isolation
+
+Always open a dedicated tab and pass its `targetId` to every subsequent call. This prevents interference when multiple agents share the same browser.
+
+```
+browser(action="open", url="https://example.com")  → returns targetId (e.g. "tab-3")
+browser(action="act", kind="click", ref="e6", targetId="tab-3")
+browser(action="snapshot", targetId="tab-3")
+browser(action="close", targetId="tab-3")           → closes only your tab
+```
+
+Omitting `targetId` defaults to the last-used tab — which may belong to another agent. **Always pass `targetId`.**
+
 ### Snapshot + Act Pattern
 
-1. **Navigate**: `browser(action="navigate", url="...")` → returns snapshot with element refs
-2. **Act**: `browser(action="act", kind="click", ref="e6")` → performs action + returns updated snapshot
-3. Both navigate and act return a snapshot automatically — **no separate snapshot call needed**
+1. **Open + Navigate**: `browser(action="open", url="...")` → returns snapshot with element refs and your `targetId`
+2. **Act**: `browser(action="act", kind="click", ref="e6", targetId="...")` → performs action + returns updated snapshot
+3. Both open/navigate and act return a snapshot automatically — **no separate snapshot call needed**
 4. Refs reset on each new snapshot — always use the latest refs
 
 ### All Actions
@@ -109,7 +122,17 @@ Use `violations` from the Step 1 response to decide:
 - **`violations` is empty + no page changed**: `verify`.
 - **`violations` is empty + single page changed**: `update-page`.
 
-Follow `spec.rules` from the Step 1 response for all content rules. Pages must be an object keyed by page ID (NOT an array):
+Follow `spec.rules` from the Step 1 response for all content rules. Pages must be an object keyed by page ID (NOT an array).
+
+**Description rules** — describe what the page IS and what you can DO, never what it CONTAINS:
+
+| ✅ Good | ❌ Bad |
+|---------|--------|
+| `"Turing Award recipients table, filterable by year"` | `"2025 winners: Bennett & Brassard for quantum computing"` |
+| `"Person bio page with education, career, awards sections"` | `"PhD from Harvard, works at IBM, won Nobel Prize"` |
+| `"Package detail with readme, version history, dependency tabs"` | `"v4.3.6, 130M weekly downloads, 0 dependencies"` |
+
+Descriptions must be **reusable across visits** — if the data on the page changes, the description should still be accurate. Factual content (names, numbers, dates, answers) belongs in the agent's response, not in the map.
 
 ```
 client(command="save", domain="example.com", json="{\"overview\":\"...\",\"pages\":{\"page-id\":{\"url\":\"/path\",\"type\":\"list\",\"description\":\"...\",\"linksTo\":[\"other-page\"]}}}")
