@@ -43,7 +43,7 @@ The `browser-use` skill is auto-triggered when a browsing task is detected — j
 2. Install the plugin:
 
    ```
-   /plugin install asm@myeongjoon8848-asm-integrations
+   /plugin install asm@asm-integrations
    ```
 
 3. Install Chromium for browser automation:
