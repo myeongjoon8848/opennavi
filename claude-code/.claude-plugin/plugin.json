@@ -1,7 +1,7 @@
 {
   "name": "opennavi",
   "description": "OpenNavi plugin — browser automation MCP server, browser-use skill, and OpenNavi CLI.",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "author": {
     "name": "Myeongjoon Kim"
   }
