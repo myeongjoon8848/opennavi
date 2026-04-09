@@ -7,6 +7,8 @@ description: "Browser automation with ASM (Agent Site Map). Navigates websites, 
 
 Use the `browser` and `client` tools to navigate websites, extract information, and interact with pages.
 
+**Why site maps matter**: Site maps let you skip exploration on revisits. Without one, you navigate blindly every time. A clean, accurate map saves tokens and time — for you and every future agent visiting this site. Saving and maintaining site maps is not optional housekeeping — it is a core part of your job.
+
 ## Step 1: Check Site Map
 
 Before browsing, always check if there is a saved site map:
