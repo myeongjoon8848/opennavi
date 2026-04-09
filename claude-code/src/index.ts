@@ -83,8 +83,8 @@ const server = new McpServer({
 server.registerTool("browser", {
   title: "Browser",
   description: [
-    "Control the browser via snapshot+act pattern. Anti-detection stealth mode is enabled by default.",
-    "Actions: navigate, snapshot, act, screenshot, tabs, open, close, console, requests, cookies, storage, emulate. New act kinds: scrollIntoView, armDialog, waitForDownload, download, responseBody.",
+    "Control the browser by attaching to the user's real Chrome via CDP. Chrome must be running with --remote-debugging-port=9222. Uses the user's existing cookies, logins, and sessions — no bot detection issues.",
+    "Actions: navigate, snapshot, act, screenshot, tabs, open, close, console, requests, cookies, storage, emulate. Act kinds: click, type, press, hover, drag, fill, select, wait, evaluate, batch, scrollIntoView, armDialog, waitForDownload, download, responseBody.",
     "Use snapshot to get page content with element refs (e1, e2...).",
     "Use act with a ref to interact: click, type, press, hover, drag, fill, select, wait, evaluate, batch.",
     "Use batch to run multiple actions atomically (e.g. fill form + submit). Pass actions=[{kind, ref, text, ...}].",

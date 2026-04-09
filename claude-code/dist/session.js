@@ -14,8 +14,10 @@ exports.closeTab = closeTab;
 exports.closeBrowser = closeBrowser;
 exports.resolveTargetIdAfterNavigate = resolveTargetIdAfterNavigate;
 const playwright_core_1 = require("playwright-core");
-const node_fs_1 = require("node:fs");
-const stealth_js_1 = require("./stealth.js");
+// ---------------------------------------------------------------------------
+// CDP endpoint configuration
+// ---------------------------------------------------------------------------
+const CDP_URL = process.env.BROWSER_CDP_URL || "http://127.0.0.1:9222";
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -120,11 +122,10 @@ function clearPageState(targetId) {
     networkRequests.delete(targetId);
 }
 // ---------------------------------------------------------------------------
-// Browser lifecycle
+// Browser lifecycle — CDP only (attach to user's real Chrome)
 // ---------------------------------------------------------------------------
 let browser = null;
 let context = null;
-let userDataDir = null;
 const pages = new Map();
 let tabCounter = 0;
 function nextTargetId() {
@@ -133,29 +134,60 @@ function nextTargetId() {
 function getContext() {
     return context;
 }
+/**
+ * Connect to the user's Chrome via CDP.
+ * Chrome must be running with --remote-debugging-port=9222.
+ * Retries up to 3 times with backoff.
+ */
 async function ensureBrowser() {
     if (context && browser?.isConnected())
         return context;
     await closeBrowser();
-    // Persistent profile directory
-    userDataDir = (0, stealth_js_1.resolveUserDataDir)("default");
-    (0, node_fs_1.mkdirSync)(userDataDir, { recursive: true });
-    const stealthArgs = (0, stealth_js_1.buildStealthLaunchArgs)();
-    const userAgent = (0, stealth_js_1.pickUserAgent)();
-    browser = await playwright_core_1.chromium.launch({
-        headless: false,
-        args: stealthArgs,
+    let lastErr;
+    for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+            const timeout = 5000 + attempt * 2000;
+            browser = await playwright_core_1.chromium.connectOverCDP(CDP_URL, { timeout });
+            break;
+        }
+        catch (err) {
+            lastErr = err;
+            await new Promise((r) => setTimeout(r, 250 + attempt * 250));
+        }
+    }
+    if (!browser?.isConnected()) {
+        throw new Error([
+            `Chrome에 연결할 수 없습니다 (${CDP_URL}).`,
+            "",
+            "Chrome을 CDP 포트와 함께 실행해주세요:",
+            process.platform === "darwin"
+                ? '  open -a "Google Chrome" --args --remote-debugging-port=9222'
+                : process.platform === "win32"
+                    ? '  start chrome --remote-debugging-port=9222'
+                    : "  google-chrome --remote-debugging-port=9222",
+            "",
+            `원인: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`,
+        ].join("\n"));
+    }
+    // Use the first existing context (user's real session)
+    context = browser.contexts()[0] ?? await browser.newContext();
+    // Register existing pages (user's open tabs)
+    registerExistingPages();
+    // Listen for new pages (popups, window.open)
+    context.on("page", (page) => {
+        const id = nextTargetId();
+        pages.set(id, page);
+        attachPageListeners(id, page);
+        page.once("close", () => {
+            pages.delete(id);
+            clearPageState(id);
+        });
     });
-    context = await browser.newContext({
-        userAgent,
-        viewport: { width: 1280, height: 800 },
-        locale: "en-US",
-        timezoneId: "America/New_York",
-        // Bypass Content-Security-Policy to allow our init scripts
-        bypassCSP: true,
-    });
-    // Apply stealth scripts before any navigation
-    await (0, stealth_js_1.applyStealthScripts)(context);
+    return context;
+}
+function registerExistingPages() {
+    if (!context)
+        return;
     const existingPages = context.pages();
     for (const page of existingPages) {
         const id = nextTargetId();
@@ -166,7 +198,6 @@ async function ensureBrowser() {
             clearPageState(id);
         });
     }
-    return context;
 }
 // ---------------------------------------------------------------------------
 // Tab management
@@ -232,6 +263,10 @@ async function closeTab(targetId) {
         }
     }
 }
+/**
+ * Close: only close tabs we opened, then disconnect from Chrome.
+ * Chrome itself keeps running.
+ */
 async function closeBrowser() {
     for (const [id, page] of pages) {
         try {
@@ -240,18 +275,13 @@ async function closeBrowser() {
         catch { }
         pages.delete(id);
     }
-    try {
-        await context?.close();
-    }
-    catch { }
+    // Disconnect Playwright from Chrome (doesn't close Chrome itself)
     try {
         await browser?.close();
     }
     catch { }
     context = null;
     browser = null;
-    // NOTE: we do NOT delete userDataDir for persistent profiles
-    userDataDir = null;
     tabCounter = 0;
 }
 // ---------------------------------------------------------------------------
