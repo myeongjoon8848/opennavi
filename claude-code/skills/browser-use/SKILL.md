@@ -91,6 +91,8 @@ Use `violations` from the Step 1 response to decide:
 - **`violations` is empty + no page changed**: `verify`.
 - **`violations` is empty + single page changed**: `update-page`.
 
+**Writing descriptions**: state what the page IS, not what it CONTAINS. No field names, response shapes, or counts. Same URL with different params = separate pages (e.g. `/board?type=5` and `/board?type=6` are two pages).
+
 ```
 client(command="save", domain="example.com", json="{...}")
 client(command="verify", domain="example.com")
