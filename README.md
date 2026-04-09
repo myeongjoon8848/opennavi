@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="ASM Logo" width="400">
+</p>
+
 # ASM — Agent Site Map
 
 **AI agents forget every website the moment they close the tab.** ASM fixes that.
