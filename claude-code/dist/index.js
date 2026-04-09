@@ -43,6 +43,7 @@ const refs_js_1 = require("./refs.js");
 const labels_js_1 = require("./labels.js");
 const opennavi_js_1 = require("./opennavi.js");
 const errors_js_1 = require("./errors.js");
+const overlay_js_1 = require("./overlay.js");
 const navigation_guard_js_1 = require("./navigation-guard.js");
 const screenshot_js_1 = require("./screenshot.js");
 const state_js_1 = require("./state.js");
@@ -276,6 +277,7 @@ server.registerTool("browser", {
                     throw ssrfErr;
                 }
                 (0, refs_js_1.restoreRefs)(resolvedPage, tid);
+                await (0, overlay_js_1.injectAgentOverlay)(resolvedPage);
                 const info = await getPageInfo(resolvedPage);
                 const snap = await (0, snapshot_js_1.takeSnapshot)(resolvedPage, {
                     maxChars: params.maxChars,
@@ -406,6 +408,7 @@ server.registerTool("browser", {
                     maxChars: params.maxChars,
                 };
                 const actResult = await (0, actions_js_1.executeAct)(page, request, 0, ssrfPolicy);
+                await (0, overlay_js_1.injectAgentOverlay)(page);
                 const info = await getPageInfo(page);
                 const tid = (0, session_js_1.getTargetId)(page);
                 const snap = await (0, snapshot_js_1.takeSnapshot)(page, {
@@ -517,6 +520,8 @@ server.registerTool("browser", {
                     await (0, navigation_guard_js_1.assertNavigationAllowed)(url, ssrfPolicy);
                 }
                 const tab = await (0, session_js_1.openTab)(url);
+                if (url)
+                    await (0, overlay_js_1.injectAgentOverlay)(tab.page);
                 const info = await getPageInfo(tab.page);
                 let snap = undefined;
                 if (url) {

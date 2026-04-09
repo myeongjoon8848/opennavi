@@ -23,6 +23,7 @@ import { restoreRefs, type RoleRefMap } from "./refs.js";
 import { screenshotWithLabels } from "./labels.js";
 import { naviQuery, naviSave, naviVerify, naviUpdatePage } from "./opennavi.js";
 import { toAIFriendlyError, BrowserValidationError } from "./errors.js";
+import { injectAgentOverlay } from "./overlay.js";
 import { assertNavigationAllowed, assertNavigationResultAllowed, assertNoProxyBypass, assertRedirectChainAllowed, type SsrfPolicy } from "./navigation-guard.js";
 import { captureNormalizedScreenshot } from "./screenshot.js";
 import {
@@ -284,6 +285,7 @@ server.registerTool("browser", {
         }
 
         restoreRefs(resolvedPage, tid);
+        await injectAgentOverlay(resolvedPage);
 
         const info = await getPageInfo(resolvedPage);
         const snap = await takeSnapshot(resolvedPage, {
@@ -428,6 +430,7 @@ server.registerTool("browser", {
         };
 
         const actResult = await executeAct(page, request, 0, ssrfPolicy);
+        await injectAgentOverlay(page);
         const info = await getPageInfo(page);
         const tid = getTargetId(page);
         const snap = await takeSnapshot(page, {
@@ -548,6 +551,7 @@ server.registerTool("browser", {
           await assertNavigationAllowed(url, ssrfPolicy);
         }
         const tab = await openTab(url);
+        if (url) await injectAgentOverlay(tab.page);
         const info = await getPageInfo(tab.page);
 
         let snap = undefined;
