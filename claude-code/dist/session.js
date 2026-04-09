@@ -133,6 +133,64 @@ async function quitChrome() {
         await new Promise((r) => setTimeout(r, 300));
     }
 }
+/**
+ * Chrome 147+ requires `--user-data-dir` to be a "non-default" path for CDP.
+ * We create a separate directory with symlinks to the real profile so the user's
+ * existing cookies, logins, and sessions are preserved.
+ */
+function getCdpUserDataDir(kind) {
+    const dataDir = process.env.BROWSER_MCP_DATA
+        ? (0, node_path_1.join)(process.env.BROWSER_MCP_DATA, "chrome-cdp-data")
+        : (0, node_path_1.join)((0, node_os_1.homedir)(), ".opennavi", "chrome-cdp-data");
+    // Determine default Chrome data directory per platform
+    let defaultDataDir = null;
+    if (process.platform === "darwin") {
+        const map = {
+            chrome: (0, node_path_1.join)((0, node_os_1.homedir)(), "Library/Application Support/Google/Chrome"),
+            brave: (0, node_path_1.join)((0, node_os_1.homedir)(), "Library/Application Support/BraveSoftware/Brave-Browser"),
+            edge: (0, node_path_1.join)((0, node_os_1.homedir)(), "Library/Application Support/Microsoft Edge"),
+            chromium: (0, node_path_1.join)((0, node_os_1.homedir)(), "Library/Application Support/Chromium"),
+        };
+        defaultDataDir = map[kind] ?? null;
+    }
+    else if (process.platform === "linux") {
+        const map = {
+            chrome: (0, node_path_1.join)((0, node_os_1.homedir)(), ".config/google-chrome"),
+            brave: (0, node_path_1.join)((0, node_os_1.homedir)(), ".config/BraveSoftware/Brave-Browser"),
+            edge: (0, node_path_1.join)((0, node_os_1.homedir)(), ".config/microsoft-edge"),
+            chromium: (0, node_path_1.join)((0, node_os_1.homedir)(), ".config/chromium"),
+        };
+        defaultDataDir = map[kind] ?? null;
+    }
+    if (!defaultDataDir || !(0, node_fs_1.existsSync)(defaultDataDir))
+        return dataDir;
+    (0, node_fs_1.mkdirSync)(dataDir, { recursive: true });
+    // Symlink the Default profile and Local State if not already linked
+    const links = ["Default", "Local State"];
+    for (const name of links) {
+        const src = (0, node_path_1.join)(defaultDataDir, name);
+        const dest = (0, node_path_1.join)(dataDir, name);
+        if (!(0, node_fs_1.existsSync)(src))
+            continue;
+        // Skip if symlink already points to the correct target
+        try {
+            if ((0, node_fs_1.readlinkSync)(dest) === src)
+                continue;
+        }
+        catch { }
+        // Remove stale entry and create fresh symlink
+        try {
+            const { rmSync } = require("node:fs");
+            rmSync(dest, { force: true, recursive: true });
+        }
+        catch { }
+        try {
+            (0, node_fs_1.symlinkSync)(src, dest);
+        }
+        catch { }
+    }
+    return dataDir;
+}
 async function launchChromeWithCdp() {
     // Already reachable? Skip launch.
     if (await isCdpReachable())
@@ -158,8 +216,10 @@ async function launchChromeWithCdp() {
             ].join("\n"));
         }
     }
+    const userDataDir = getCdpUserDataDir(exe.kind);
     const args = [
         `--remote-debugging-port=${CDP_PORT}`,
+        `--user-data-dir=${userDataDir}`,
         "--no-first-run",
         "--no-default-browser-check",
         "--disable-session-crashed-bubble",

@@ -1,6 +1,6 @@
 import { chromium, type Browser, type BrowserContext, type Page, type Request, type Response } from "playwright-core";
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, symlinkSync, readlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -163,6 +163,63 @@ async function quitChrome(): Promise<void> {
   }
 }
 
+/**
+ * Chrome 147+ requires `--user-data-dir` to be a "non-default" path for CDP.
+ * We create a separate directory with symlinks to the real profile so the user's
+ * existing cookies, logins, and sessions are preserved.
+ */
+function getCdpUserDataDir(kind: ChromeExecutable["kind"]): string {
+  const dataDir = process.env.BROWSER_MCP_DATA
+    ? join(process.env.BROWSER_MCP_DATA, "chrome-cdp-data")
+    : join(homedir(), ".opennavi", "chrome-cdp-data");
+
+  // Determine default Chrome data directory per platform
+  let defaultDataDir: string | null = null;
+  if (process.platform === "darwin") {
+    const map: Record<string, string> = {
+      chrome: join(homedir(), "Library/Application Support/Google/Chrome"),
+      brave: join(homedir(), "Library/Application Support/BraveSoftware/Brave-Browser"),
+      edge: join(homedir(), "Library/Application Support/Microsoft Edge"),
+      chromium: join(homedir(), "Library/Application Support/Chromium"),
+    };
+    defaultDataDir = map[kind] ?? null;
+  } else if (process.platform === "linux") {
+    const map: Record<string, string> = {
+      chrome: join(homedir(), ".config/google-chrome"),
+      brave: join(homedir(), ".config/BraveSoftware/Brave-Browser"),
+      edge: join(homedir(), ".config/microsoft-edge"),
+      chromium: join(homedir(), ".config/chromium"),
+    };
+    defaultDataDir = map[kind] ?? null;
+  }
+
+  if (!defaultDataDir || !existsSync(defaultDataDir)) return dataDir;
+
+  mkdirSync(dataDir, { recursive: true });
+
+  // Symlink the Default profile and Local State if not already linked
+  const links = ["Default", "Local State"];
+  for (const name of links) {
+    const src = join(defaultDataDir, name);
+    const dest = join(dataDir, name);
+    if (!existsSync(src)) continue;
+    // Skip if symlink already points to the correct target
+    try {
+      if (readlinkSync(dest) === src) continue;
+    } catch {}
+    // Remove stale entry and create fresh symlink
+    try {
+      const { rmSync } = require("node:fs");
+      rmSync(dest, { force: true, recursive: true });
+    } catch {}
+    try {
+      symlinkSync(src, dest);
+    } catch {}
+  }
+
+  return dataDir;
+}
+
 async function launchChromeWithCdp(): Promise<void> {
   // Already reachable? Skip launch.
   if (await isCdpReachable()) return;
@@ -194,8 +251,11 @@ async function launchChromeWithCdp(): Promise<void> {
     }
   }
 
+  const userDataDir = getCdpUserDataDir(exe.kind);
+
   const args = [
     `--remote-debugging-port=${CDP_PORT}`,
+    `--user-data-dir=${userDataDir}`,
     "--no-first-run",
     "--no-default-browser-check",
     "--disable-session-crashed-bubble",
