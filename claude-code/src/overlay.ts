@@ -9,20 +9,20 @@ const OVERLAY_CSS = `
   pointer-events: none;
   z-index: 2147483647;
   border: none;
-  background: linear-gradient(to bottom, rgba(250, 204, 21, 0.6), transparent 60px),
-              linear-gradient(to top, rgba(250, 204, 21, 0.6), transparent 60px),
-              linear-gradient(to right, rgba(250, 204, 21, 0.6), transparent 60px),
-              linear-gradient(to left, rgba(250, 204, 21, 0.6), transparent 60px);
-  animation: __opennavi_pulse__ 2s ease-in-out infinite;
+  background: linear-gradient(to bottom, rgba(20, 184, 166, 0.5), transparent 60px),
+              linear-gradient(to top, rgba(20, 184, 166, 0.5), transparent 60px),
+              linear-gradient(to right, rgba(20, 184, 166, 0.5), transparent 60px),
+              linear-gradient(to left, rgba(20, 184, 166, 0.5), transparent 60px);
+  animation: __opennavi_pulse__ 2.4s ease-in-out infinite;
 }
 
 @keyframes __opennavi_pulse__ {
-  0%, 100% { opacity: 0.3; }
-  50% { opacity: 1; }
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 0.9; }
 }
 `;
 
-const BUTTERFLY_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><g transform="translate(16,16)"><g transform="rotate(-15)"><ellipse cx="-6" cy="-5" rx="6" ry="8" fill="#facc15" stroke="#d97706" stroke-width="0.8" opacity="0.9"/><ellipse cx="-5" cy="-3" rx="2.5" ry="3.5" fill="#fde68a" opacity="0.5"/></g><g transform="scale(-1,1) rotate(-15)"><ellipse cx="-6" cy="-5" rx="6" ry="8" fill="#facc15" stroke="#d97706" stroke-width="0.8" opacity="0.9"/><ellipse cx="-5" cy="-3" rx="2.5" ry="3.5" fill="#fde68a" opacity="0.5"/></g><g transform="rotate(20)"><ellipse cx="-4" cy="4" rx="3.5" ry="5.5" fill="#fbbf24" stroke="#d97706" stroke-width="0.8" opacity="0.85"/></g><g transform="scale(-1,1) rotate(20)"><ellipse cx="-4" cy="4" rx="3.5" ry="5.5" fill="#fbbf24" stroke="#d97706" stroke-width="0.8" opacity="0.85"/></g><ellipse cx="0" cy="0" rx="1" ry="6" fill="#92400e"/><line x1="0" y1="-6" x2="-3" y2="-10" stroke="#92400e" stroke-width="0.8" stroke-linecap="round"/><line x1="0" y1="-6" x2="3" y2="-10" stroke="#92400e" stroke-width="0.8" stroke-linecap="round"/><circle cx="-3" cy="-10.5" r="0.8" fill="#92400e"/><circle cx="3" cy="-10.5" r="0.8" fill="#92400e"/></g></svg>`;
+const BUTTERFLY_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><g fill="#0d9488"><path d="M16 16 C 6 4, 1 10, 3 16 C 8 18, 13 17, 16 16 Z"/><path d="M16 16 C 26 4, 31 10, 29 16 C 24 18, 19 17, 16 16 Z"/><path d="M16 16 C 11 19, 8 26, 12 27 C 15 25, 16 20, 16 17 Z"/><path d="M16 16 C 21 19, 24 26, 20 27 C 17 25, 16 20, 16 17 Z"/></g></svg>`;
 
 /**
  * Inject a gradient border overlay and butterfly favicon to indicate agent-controlled browsing.
