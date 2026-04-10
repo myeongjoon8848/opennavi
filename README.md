@@ -14,6 +14,18 @@ Every time an AI agent browses a website, it starts from scratch — navigating 
 
 OpenNavi maintains a shared **site map registry**. When any agent visits a site, the map is saved. When the next agent (or the same one, later) visits again, it picks up right where the last one left off. Think of it like a collective spatial memory for AI agents.
 
+## 🚀 Token Savings
+
+**With an OpenNavi map, agents use 50%+ fewer tokens on deep browsing tasks.**
+
+For any task that requires navigating 4 or more levels deep into a site, agents with an OpenNavi map cut token consumption by **more than half** compared to agents exploring from scratch. And here's the best part:
+
+> **The more complex the task, the bigger the savings.**
+
+Token efficiency scales with task complexity. A quick 2-click lookup might save you 20%. A multi-step workflow that crawls deep into a dashboard, filters results, and extracts structured data? That's where OpenNavi really shines — savings climb well past 50%, and keep growing as tasks get harder.
+
+Why? Because exploration cost is non-linear. Every wasted click cascades into more DOM snapshots, more reasoning, more retries. OpenNavi skips the exploration entirely and goes straight to the destination.
+
 ## Browser Tool
 
 OpenNavi ships with a powerful browser automation tool built on [Playwright](https://playwright.dev/) — a single unified `browser` tool that does everything:
