@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.png" alt="OpenNavi Logo" width="400">
+  <img src="assets/logo.png" alt="OpenNavi Logo" width="100%">
 </p>
 
 # OpenNavi
