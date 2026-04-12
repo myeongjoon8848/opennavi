@@ -1,6 +1,7 @@
 import { chromium, type Browser, type BrowserContext, type Page, type Request, type Response } from "playwright-core";
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, symlinkSync, readlinkSync } from "node:fs";
+import { existsSync, mkdirSync, symlinkSync, readlinkSync, readFileSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { BrowserTabNotFoundError, BrowserConnectionError } from "./errors.js";
@@ -121,30 +122,26 @@ async function isCdpReachable(): Promise<boolean> {
   }
 }
 
-/** Check if Chrome is already running (macOS/Linux) */
-function isChromeAlreadyRunning(): boolean {
-  try {
-    const out = execFileSync("pgrep", ["-x", "Google Chrome"], {
-      encoding: "utf8",
-      timeout: 1000,
-    }).trim();
-    return out.length > 0;
-  } catch {
-    // pgrep returns exit 1 if no match — that's fine
-  }
-  // Fallback: also check common Linux/Windows names
-  try {
-    const out = execFileSync("pgrep", ["-f", "chrome|chromium|brave|msedge"], {
-      encoding: "utf8",
-      timeout: 1000,
-    }).trim();
-    return out.length > 0;
-  } catch {}
-  return false;
+/** Check if the CDP port is free by attempting to listen on it. */
+function ensurePortAvailable(port: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const srv = createServer();
+    srv.once("error", (err: NodeJS.ErrnoException) => {
+      if (err.code === "EADDRINUSE") {
+        reject(new Error(`PORT_IN_USE:${port}`));
+      } else {
+        reject(err);
+      }
+    });
+    srv.listen(port, "127.0.0.1", () => {
+      srv.close(() => resolve());
+    });
+  });
 }
 
-/** Quit Chrome gracefully on macOS via AppleScript, or kill on Linux */
-async function quitChrome(): Promise<void> {
+/** Stop Chrome: graceful quit → SIGKILL escalation, confirmed by port release. */
+async function stopChrome(): Promise<void> {
+  // Phase 1: graceful quit
   if (process.platform === "darwin") {
     try {
       execFileSync("osascript", ["-e", 'tell application "Google Chrome" to quit'], {
@@ -156,11 +153,44 @@ async function quitChrome(): Promise<void> {
       execFileSync("pkill", ["-f", "chrome|chromium|brave|msedge"], { timeout: 3000 });
     } catch {}
   }
-  // Wait for Chrome to fully exit
-  const deadline = Date.now() + 5000;
-  while (Date.now() < deadline) {
-    if (!isChromeAlreadyRunning()) return;
+
+  // Wait for port release (up to 5s)
+  const gracefulDeadline = Date.now() + 5000;
+  while (Date.now() < gracefulDeadline) {
+    try {
+      await ensurePortAvailable(CDP_PORT);
+      return; // port is free
+    } catch {}
     await new Promise((r) => setTimeout(r, 300));
+  }
+
+  // Phase 2: force kill
+  try {
+    execFileSync("pkill", ["-9", "-f", "chrome|chromium|brave|msedge"], { timeout: 3000 });
+  } catch {}
+
+  // Wait for kernel to release port (up to 2s)
+  const killDeadline = Date.now() + 2000;
+  while (Date.now() < killDeadline) {
+    try {
+      await ensurePortAvailable(CDP_PORT);
+      return;
+    } catch {}
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
+
+/** Write clean-exit flags to prevent Chrome's crash-restore dialog. */
+function ensureProfileCleanExit(userDataDir: string): void {
+  const prefsPath = join(userDataDir, "Default", "Preferences");
+  try {
+    const raw = readFileSync(prefsPath, "utf-8");
+    const prefs = JSON.parse(raw);
+    prefs.exit_type = "Normal";
+    prefs.exited_cleanly = true;
+    writeFileSync(prefsPath, JSON.stringify(prefs), "utf-8");
+  } catch {
+    // Preferences file may not exist on first run — ignore
   }
 }
 
@@ -236,23 +266,29 @@ async function launchChromeWithCdp(): Promise<void> {
     );
   }
 
-  // macOS single-instance problem: if Chrome is already running without CDP,
-  // a second launch just opens a new window and ignores --remote-debugging-port.
-  // We must quit Chrome first, then relaunch with CDP.
-  if (isChromeAlreadyRunning()) {
-    await quitChrome();
-    // If Chrome still running after quit attempt, error out
-    if (isChromeAlreadyRunning()) {
+  // Check if the CDP port is available. If something is occupying it (e.g. Chrome
+  // running without CDP, or another process), attempt to stop Chrome and reclaim it.
+  try {
+    await ensurePortAvailable(CDP_PORT);
+  } catch {
+    // Port in use — try to stop Chrome and reclaim
+    await stopChrome();
+    try {
+      await ensurePortAvailable(CDP_PORT);
+    } catch {
       throw new Error(
         [
-          "Chrome이 이미 실행 중이라 CDP 포트를 열 수 없습니다.",
-          "Chrome을 수동으로 종료한 후 다시 시도해주세요.",
+          `CDP 포트(${CDP_PORT})가 다른 프로세스에 의해 사용 중입니다.`,
+          "Chrome을 수동으로 종료하거나, 포트를 점유한 프로세스를 확인해주세요.",
+          `  lsof -nP -iTCP:${CDP_PORT} -sTCP:LISTEN`,
         ].join("\n"),
       );
     }
   }
 
   const userDataDir = getCdpUserDataDir(exe.kind);
+
+  ensureProfileCleanExit(userDataDir);
 
   const args = [
     `--remote-debugging-port=${CDP_PORT}`,
