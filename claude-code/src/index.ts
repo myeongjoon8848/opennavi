@@ -114,6 +114,7 @@ server.registerTool("browser", {
     "Use emulate to change device profile, geolocation, timezone, locale, color scheme, user-agent, headers, or offline mode.",
     "Use requests to inspect network traffic (XHR, fetch, etc.). Use responseBody (act kind) to capture API response content by URL pattern.",
     "Set mode='efficient' on snapshot/navigate for a compact view (10k chars, depth 6, interactive only) — saves LLM context on large pages.",
+    "Set noSnapshot=true on act when you only need the action result — typical with kind=evaluate that returns small JSON. Suppresses the post-action snapshot to avoid large payloads.",
     "Screenshots are auto-normalized: max 2000px side, max 5MB, progressive JPEG fallback.",
     "For full workflow guidance (site maps, exit sequence), see the /opennavi:browser-use skill.",
   ].join(" "),
@@ -132,6 +133,7 @@ server.registerTool("browser", {
     labels: z.boolean().optional().describe("Include labeled screenshot with snapshot (overlays ref badges on elements)"),
     mode: z.enum(["normal", "efficient"]).optional().describe("Snapshot mode: normal (default) or efficient (compact, 10k chars, interactive only)"),
     skipSiteMap: z.boolean().optional().describe("Skip auto-fetching the OpenNavi site map on navigate (default false)"),
+    noSnapshot: z.boolean().optional().describe("Skip the post-action snapshot in act responses — useful with kind=evaluate when you only need the JS result, saves large context payloads"),
     kind: z.enum(["click", "type", "press", "hover", "drag", "fill", "select", "wait", "evaluate", "batch", "scrollIntoView", "armDialog", "waitForDownload", "download", "responseBody"]).optional().describe("Act sub-action kind"),
     ref: z.string().optional().describe("Element ref from snapshot (e.g. e1, e2)"),
     text: z.string().optional().describe("Text for type/fill"),
@@ -467,6 +469,27 @@ server.registerTool("browser", {
         await injectAgentOverlay(page);
         const info = await getPageInfo(page);
         const tid = getTargetId(page);
+
+        if (params.noSnapshot) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: wrapExternalContent(
+                  JSON.stringify({
+                    ok: true,
+                    action: "act",
+                    kind,
+                    targetId: tid,
+                    ...info,
+                    result: actResult,
+                  }, null, 2),
+                ),
+              },
+            ],
+          };
+        }
+
         const snap = await takeSnapshot(page, {
           maxChars: params.maxChars,
           interactive: params.interactive,

@@ -533,14 +533,15 @@ function registerExistingPages() {
 // ---------------------------------------------------------------------------
 async function openTab(url, timeoutMs) {
     const ctx = await ensureBrowser();
+    // The context-level "page" event listener (set up in connectBrowserInternal)
+    // already registers newly created pages — including ones we open here. Don't
+    // double-register: it would put the same Page under two targetIds and make
+    // getTargetId() return the wrong (earlier-inserted) one.
     const page = await ctx.newPage();
-    const id = nextTargetId();
-    pages.set(id, page);
-    attachPageListeners(id, page);
-    page.once("close", () => {
-        pages.delete(id);
-        clearPageState(id);
-    });
+    const id = getTargetId(page);
+    if (!id) {
+        throw new Error("Internal error: new page was not registered by context listener");
+    }
     if (url) {
         const timeout = Math.max(1000, Math.min(120_000, timeoutMs ?? 30_000));
         await page.goto(url, { timeout }).catch(() => {
