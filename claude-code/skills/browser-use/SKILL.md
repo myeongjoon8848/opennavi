@@ -1,6 +1,6 @@
 ---
 name: browser-use
-description: "Browser automation with OpenNavi. Navigates websites, extracts content, fills forms, takes screenshots. Uses OpenNavi for efficient revisits. TRIGGER when: user asks to visit a URL, scrape a page, interact with a website, or any browser automation task."
+description: "Browser automation with OpenNavi. Navigates websites, extracts content, fills forms, takes screenshots. Uses OpenNavi for efficient revisits, and contributes site maps to a public registry (pass skipSiteMap=true to opt out). TRIGGER when: user asks to visit a URL, scrape a page, interact with a website, or any browser automation task."
 ---
 
 # Browser Automation
@@ -8,6 +8,26 @@ description: "Browser automation with OpenNavi. Navigates websites, extracts con
 Use the `browser` and `client` tools to navigate websites, extract information, and interact with pages.
 
 **Why site maps matter**: Site maps let you skip exploration on revisits. Without one, you navigate blindly every time. A clean, accurate map saves tokens and time — for you and every future agent visiting this site. Saving and maintaining site maps is not optional housekeeping — it is a core part of your job.
+
+## Step 0: Contribution scope (read first)
+
+Site maps you `save`, `verify`, or `update-node` are written to the **public OpenNavi registry**. Contribution is a byproduct of normal use — you do not need to do anything special to participate. But not every site is appropriate to contribute.
+
+**MUST skip contribution** — pass `skipSiteMap: true` on every `navigate`/`open` and do NOT call `client save/verify/update-node` — when the target URL's hostname matches any of:
+
+- `localhost`, `127.0.0.1`, `0.0.0.0`, `::1`
+- RFC1918 private ranges: `10.*`, `192.168.*`, `172.16.*`–`172.31.*`
+- Link-local: `169.254.*`, IPv6 `fe80::/10`, ULA `fc00::/7`
+- Internal TLDs: `*.local`, `*.localhost`, `*.internal`, `*.lan`
+- Explicit intranet hostnames: `intranet.*`, `corp.*`, `*.corp.*`
+
+**SHOULD strongly consider skipping** (use judgment):
+
+- Site is behind an enterprise SSO (Okta, Microsoft Entra, Google Workspace) where the landing URL does not clearly indicate a public product
+- User described the site as "our internal tool", "company wiki", "admin panel", or similar
+- Hostname contains a customer/tenant identifier that is itself sensitive
+
+**When in doubt, skip.** A missing map is far safer than a leaked one. If you skip, report `[site-map: skipped]` at the end of your response instead of `[site-map: saved/verified]`.
 
 ## Step 1: Check Site Map
 
@@ -128,12 +148,24 @@ After extracting the information you need, execute these three steps **in order*
 
 ### 3a. Save or verify site map
 
-Use `violations` from the Step 1 response to decide:
+Pick **one** action from the table below. When more than one row fits, pick the **lighter** action — flip-flops hurt the registry more than a slightly stale map.
 
-- **New site** (record was null): `save` with data conforming to `spec.rules`.
-- **`violations` is non-empty**: rewrite the entire map to conform to `spec.rules`, then `save`. **Do NOT verify.**
-- **`violations` is empty + no node changed**: `verify`.
-- **`violations` is empty + single node changed**: `update-node`.
+| Your situation | Action |
+|---|---|
+| Step 0 said to skip | **skip contribution** — report `[site-map: skipped]` |
+| New site (record was null), and you seeded it from a **single-page** visit | **skip contribution** — shallow seed poisons the registry; report `[site-map: skipped]` |
+| New site (record was null), and you visited multiple pages | `save` a new map |
+| Existing map, `violations` is non-empty | rewrite to conform to `spec.rules`, then `save` |
+| Existing map, `drift` has an entry you can clearly fix | `update-node` the affected node |
+| Existing map, you added or fixed a single node | `update-node` |
+| Existing map, everything matched reality | `verify` |
+
+**Preferences when multiple rows apply** — these are guidance, not hard rules:
+
+- Prefer `verify` over `update-node` over `save`/rewrite. Every heavier action must earn its cost.
+- If `drift` points to an obvious fix **and** you would otherwise `verify`, prefer `update-node` so the registry does not rot. If the right fix is not obvious, `verify` is acceptable and a future agent can address the drift.
+- If you observe a structural problem the map got wrong (wrong `kind`, misleading `summary`, missing a major transition) that `violations` did not catch, `update-node` the specific node. **Do not rewrite the whole map** for a spot fix — only `violations` justifies a full rewrite.
+- A single-node map from a one-page visit is worse than no map — it poisons the registry via first-writer-wins. Prefer skipping a shallow save and letting a more thorough agent seed later.
 
 Follow `spec.rules` from the Step 1 response for all content rules. `nodes` must be an object keyed by kebab-case node ID.
 
@@ -204,8 +236,8 @@ browser(action="close")
 
 ### 3c. Report results
 
-Include `[site-map: saved]` or `[site-map: verified]` at the end of the response.
+Include `[site-map: saved]`, `[site-map: verified]`, or `[site-map: skipped]` at the end of the response.
 
 ---
 
-**REMINDER: Always end with `[site-map: saved]` or `[site-map: verified]`.**
+**REMINDER: Always end with `[site-map: saved]`, `[site-map: verified]`, or `[site-map: skipped]`.**
