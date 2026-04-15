@@ -63,3 +63,20 @@ After pushing changes with a version bump:
 ```
 
 Then restart the session.
+
+## Playwright 패치 (`claude-code/scripts/patch-playwright.mjs`)
+
+`playwright-core@1.59.1`은 `connectOverCDP` 핸드셰이크 중 `Browser.setDownloadBehavior`를 `.catch()` 없이 호출한다. Chrome 147+는 이 명령을 거부하므로 모든 CDP 연결이 실패한다 (issue #7 참고).
+
+임시 방편으로 `postinstall` 훅이 `node_modules/playwright-core/lib/server/chromium/crBrowser.js`에 한 줄(`.catch(() => {})`)을 추가한다. 스크립트는 idempotent이고, 이미 패치됐거나 파일 구조가 바뀌었으면 no-op.
+
+**playwright-core 버전을 올릴 때 반드시 확인할 것:**
+
+1. 새 버전의 `lib/server/chromium/crBrowser.js`에서 `Browser.setDownloadBehavior` 호출에 이미 `.catch(() => {})`가 있으면 → **패치 스크립트와 `postinstall` 훅을 삭제**하고 CLAUDE.md의 이 섹션도 지운다.
+2. 아직 없으면 → `patch-playwright.mjs`의 `NEEDLE` 문자열이 새 버전 포맷과 일치하는지 확인. 불일치하면 스크립트는 경고만 찍고 skip하므로 **버그가 조용히 돌아올 수 있다**.
+
+확인 방법:
+```bash
+cd claude-code
+grep -A 6 "Browser.setDownloadBehavior" node_modules/playwright-core/lib/server/chromium/crBrowser.js
+```

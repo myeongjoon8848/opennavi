@@ -541,6 +541,8 @@ async function connectBrowserInternal(): Promise<BrowserContext> {
   // Use the first existing context (user's real session).
   // Never call browser.newContext() — it triggers Browser.setDownloadBehavior
   // which Chrome 147+ no longer supports for CDP-attached browsers.
+  // The same command is also sent during connectOverCDP handshake; that path
+  // is neutralized by scripts/patch-playwright.mjs (postinstall).
   const contexts = browser.contexts();
   if (contexts.length === 0) {
     throw new BrowserConnectionError(
