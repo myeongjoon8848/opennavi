@@ -527,8 +527,25 @@ async function connectBrowserInternal(): Promise<BrowserContext> {
   }
 
   if (!browser?.isConnected()) {
+    const errMsg = lastErr instanceof Error ? lastErr.message : String(lastErr);
+    // Chrome 147+ rejects Browser.setDownloadBehavior on default-profile CDP attaches.
+    // Normally neutralized by scripts/patch-playwright.mjs, but the postinstall hook
+    // does not run in installs that use --ignore-scripts (e.g. some marketplace flows).
+    if (errMsg.includes("setDownloadBehavior") || errMsg.includes("context management is not supported")) {
+      throw new BrowserConnectionError(
+        [
+          "Chrome이 default 프로파일로 CDP 디버그 포트를 점유 중이라 attach가 거부되었습니다.",
+          "(Chrome 147+ 제약 — playwright-core 패치가 적용되지 않은 환경에서 발생)",
+          "",
+          "해결 방법:",
+          "1. 현재 실행 중인 Chrome을 완전히 종료하세요 (Cmd+Q / 모든 창 닫기)",
+          "2. 동일한 브라우저 액션을 다시 호출하면 플러그인이 격리된 user-data-dir로",
+          "   Chrome을 자동 실행합니다. 기존 프로파일은 symlink로 공유되어 로그인이 유지됩니다.",
+        ].join("\n"),
+      );
+    }
     throw new BrowserConnectionError(
-      `Chrome CDP에 연결할 수 없습니다 (${CDP_URL}).\n원인: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`,
+      `Chrome CDP에 연결할 수 없습니다 (${CDP_URL}).\n원인: ${errMsg}`,
     );
   }
 
@@ -546,7 +563,7 @@ async function connectBrowserInternal(): Promise<BrowserContext> {
   const contexts = browser.contexts();
   if (contexts.length === 0) {
     throw new BrowserConnectionError(
-      "Chrome에 연결했지만 브라우저 컨텍스트가 없습니다. Chrome을 재시작한 후 다시 시도해주세요.",
+      "Chrome에 연결했지만 활성 브라우저 컨텍스트가 없습니다.\nChrome 창을 하나 열고 다시 시도해주세요.",
     );
   }
   context = contexts[0]!;

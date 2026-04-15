@@ -80,3 +80,5 @@ Then restart the session.
 cd claude-code
 grep -A 6 "Browser.setDownloadBehavior" node_modules/playwright-core/lib/server/chromium/crBrowser.js
 ```
+
+**패치가 적용되지 않은 환경**: 마켓플레이스 install이 `npm install --ignore-scripts`로 의존성을 가져오는 경우 등에서 postinstall 훅이 실행되지 않아 패치가 빠진다. 이때 `connectOverCDP`가 `Browser context management is not supported`로 실패하는데, `connectBrowserInternal`이 이를 잡아서 사용자에게 "Chrome 종료 후 재시도" 안내 메시지로 변환한다 (`session.ts`의 catch 분기). 사용자가 Chrome을 종료하면 플러그인이 격리된 `--user-data-dir`로 자동 launch하여 우회한다.
