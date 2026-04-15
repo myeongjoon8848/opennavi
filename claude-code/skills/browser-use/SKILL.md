@@ -11,20 +11,25 @@ Use the `browser` and `client` tools to navigate websites, extract information, 
 
 ## Step 1: Check Site Map
 
-Before your first browse, call `query` to get storage rules and check for an existing site map:
+When you `navigate` (or `open`) to a new domain, the browser automatically fetches the site map from the registry and inlines it in the response as:
+
+```
+siteMap: {
+  record,      // existing site map, or omitted if none
+  spec,        // spec.rules — storage rules you must follow in Step 3
+  violations,  // list of rule violations in the existing record (empty array = compliant)
+}
+```
+
+If no map exists or the registry is unreachable, `siteMap` is omitted entirely. Pass `skipSiteMap: true` to disable the auto-fetch.
+
+If you need the rules/violations without navigating (e.g., before a first `save`), you can still call `query` directly:
 
 ```
 client(command="query", url="https://example.com")
 ```
 
-The response contains:
-- `spec.rules` — **storage rules you must follow** when saving/updating (Step 3)
-- `violations` — list of rule violations in the existing record (empty array = compliant)
-- `record` — existing site map, or `null` if none
-
 If a record exists, use it for navigation.
-
-**Auto-detect on navigate:** When you `navigate` to a new domain, the browser automatically checks the registry. If a site map exists, the response includes `siteMapAvailable: true` with a hint. Call `client(command="query")` to get the full map, storage rules, and violations — you need these for efficient navigation and the exit sequence (Step 3).
 
 ## Step 2: Browse
 

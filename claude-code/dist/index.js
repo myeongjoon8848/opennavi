@@ -96,7 +96,7 @@ server.registerTool("browser", {
         "Use snapshot to get page content with element refs (e1, e2...).",
         "Use act with a ref to interact: click, type, press, hover, drag, fill, select, wait, evaluate, batch.",
         "Use batch to run multiple actions atomically (e.g. fill form + submit). Pass actions=[{kind, ref, text, ...}].",
-        "navigate and act return a snapshot automatically — no need to call snapshot separately. navigate checks the OpenNavi registry on new domains — if a site map exists, siteMapAvailable=true appears in the response; call client(query) to get the full map.",
+        "navigate and act return a snapshot automatically — no need to call snapshot separately. navigate checks the OpenNavi registry on new domains — if a site map exists, it is inlined in the response as `siteMap: { record, spec, violations }`. Pass skipSiteMap=true to disable.",
         "Refs reset on each new snapshot, so always use the latest refs.",
         "Set labels=true on snapshot/navigate to get a labeled screenshot alongside the snapshot.",
         "Set interactive=true to show only interactive elements (buttons, links, inputs).",
@@ -121,6 +121,7 @@ server.registerTool("browser", {
         refsMode: zod_1.z.enum(["aria", "role"]).optional().describe("Ref resolution mode: aria (default, fast) or role (semantic, SPA-resilient)"),
         labels: zod_1.z.boolean().optional().describe("Include labeled screenshot with snapshot (overlays ref badges on elements)"),
         mode: zod_1.z.enum(["normal", "efficient"]).optional().describe("Snapshot mode: normal (default) or efficient (compact, 10k chars, interactive only)"),
+        skipSiteMap: zod_1.z.boolean().optional().describe("Skip auto-fetching the OpenNavi site map on navigate (default false)"),
         kind: zod_1.z.enum(["click", "type", "press", "hover", "drag", "fill", "select", "wait", "evaluate", "batch", "scrollIntoView", "armDialog", "waitForDownload", "download", "responseBody"]).optional().describe("Act sub-action kind"),
         ref: zod_1.z.string().optional().describe("Element ref from snapshot (e.g. e1, e2)"),
         text: zod_1.z.string().optional().describe("Text for type/fill"),
@@ -288,17 +289,22 @@ server.registerTool("browser", {
                     mode: params.mode,
                 });
                 lastSnapshotRefs = snap.refs;
-                // Auto-check OpenNavi registry for new domains
-                let siteMapHint;
+                // Inline the OpenNavi site map for new domains so the agent doesn't
+                // need a separate client(query) round-trip.
+                let siteMap;
                 const navigatedDomain = extractDomainFromUrl(url);
-                if (navigatedDomain && !queriedDomains.has(navigatedDomain)) {
+                if (!params.skipSiteMap && navigatedDomain && !queriedDomains.has(navigatedDomain)) {
                     queriedDomains.add(navigatedDomain);
                     try {
                         const raw = await (0, opennavi_js_1.naviQuery)(url);
                         if (raw) {
                             const parsed = JSON.parse(raw);
-                            if (parsed.record) {
-                                siteMapHint = { siteMapAvailable: true, domain: navigatedDomain };
+                            if (parsed && parsed.record) {
+                                siteMap = {
+                                    record: parsed.record,
+                                    spec: parsed.spec,
+                                    violations: Array.isArray(parsed.violations) ? parsed.violations : [],
+                                };
                             }
                         }
                     }
@@ -313,7 +319,7 @@ server.registerTool("browser", {
                             targetId: tid,
                             ...info,
                             ...(warning ? { warning } : {}),
-                            ...(siteMapHint ? { siteMapAvailable: true, siteMapHint: `⚠️ IMPORTANT: A site map exists for ${siteMapHint.domain}. You MUST call client(command="query", url="${url}") now to retrieve navigation guidance before interacting with this site. The site map contains page structure and rules that prevent wasted actions.` } : {}),
+                            ...(siteMap ? { siteMap } : {}),
                             truncated: snap.truncated,
                             refsCount: Object.keys(snap.refs).length,
                             snapshot: snap.snapshot,
