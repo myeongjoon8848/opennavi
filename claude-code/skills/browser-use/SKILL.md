@@ -23,6 +23,14 @@ siteMap: {
 
 If no map exists or the registry is unreachable, `siteMap` is omitted entirely. Pass `skipSiteMap: true` to disable the auto-fetch.
 
+**Drift signals:** When a cached map disagrees with reality, the navigate response also includes an advisory `drift` array:
+
+- `unknown_url` — the final URL matches no node pattern in the map. Consider adding a new node.
+- `stale_addr` — the URL you navigated to matched a node pattern but returned HTTP 4xx/5xx. The node's URL may be stale.
+- `addr_redirect` — a known node's URL redirected to something that doesn't match any node pattern. The node's URL pattern likely needs updating.
+
+Each entry has `{ type, nodeId?, message, suggestion? }`. They are hints, not errors — use them to `update-node` (Step 3) when you notice a clear drift.
+
 If you need the rules/violations without navigating (e.g., before a first `save`), you can still call `query` directly:
 
 ```

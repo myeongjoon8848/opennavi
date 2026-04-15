@@ -22,6 +22,7 @@ import { executeAct, type ActRequest } from "./actions.js";
 import { restoreRefs, type RoleRefMap } from "./refs.js";
 import { screenshotWithLabels } from "./labels.js";
 import { naviQuery, naviSave, naviVerify, naviUpdateNode } from "./opennavi.js";
+import { detectDrift, type DriftSignal } from "./site-map.js";
 import { toAIFriendlyError, BrowserValidationError } from "./errors.js";
 import { injectAgentOverlay } from "./overlay.js";
 import { assertNavigationAllowed, assertNavigationResultAllowed, assertNoProxyBypass, assertRedirectChainAllowed, type SsrfPolicy } from "./navigation-guard.js";
@@ -74,8 +75,15 @@ const ssrfPolicy: SsrfPolicy = {
   hostnameAllowlist: process.env.BROWSER_HOSTNAME_ALLOWLIST?.split(",").map((s) => s.trim()).filter(Boolean),
 };
 
-// Track queried domains to auto-query on new domain navigate
-const queriedDomains = new Set<string>();
+// Cache parsed OpenNavi site maps per domain. First navigate inlines the
+// map in the response; subsequent navigates reuse the cached record to
+// detect drift without re-fetching.
+interface CachedSiteMap {
+  record: any;
+  spec: unknown;
+  violations: string[];
+}
+const siteMapCache = new Map<string, CachedSiteMap | null>();
 
 function extractDomainFromUrl(url: string): string | null {
   try {
@@ -98,7 +106,7 @@ server.registerTool("browser", {
     "Use snapshot to get page content with element refs (e1, e2...).",
     "Use act with a ref to interact: click, type, press, hover, drag, fill, select, wait, evaluate, batch.",
     "Use batch to run multiple actions atomically (e.g. fill form + submit). Pass actions=[{kind, ref, text, ...}].",
-    "navigate and act return a snapshot automatically — no need to call snapshot separately. navigate checks the OpenNavi registry on new domains — if a site map exists, it is inlined in the response as `siteMap: { record, spec, violations }`. Pass skipSiteMap=true to disable.",
+    "navigate and act return a snapshot automatically — no need to call snapshot separately. navigate checks the OpenNavi registry on new domains — if a site map exists, it is inlined in the response as `siteMap: { record, spec, violations }`. When a cached site map disagrees with the actual navigation (HTTP 4xx/5xx on a known node, redirect away from a node pattern, or final URL not matching any node), advisory `drift: [{ type, nodeId?, message, suggestion? }]` entries are added. Pass skipSiteMap=true to disable both.",
     "Refs reset on each new snapshot, so always use the latest refs.",
     "Set labels=true on snapshot/navigate to get a labeled screenshot alongside the snapshot.",
     "Set interactive=true to show only interactive elements (buttons, links, inputs).",
@@ -299,27 +307,44 @@ server.registerTool("browser", {
         });
         lastSnapshotRefs = snap.refs;
 
-        // Inline the OpenNavi site map for new domains so the agent doesn't
-        // need a separate client(query) round-trip.
+        // Inline the OpenNavi site map for new domains (issue #5) and emit
+        // drift signals when the current URL disagrees with the map (#6).
         let siteMap:
           | { record: unknown; spec: unknown; violations: string[] }
           | undefined;
+        let drift: DriftSignal[] = [];
         const navigatedDomain = extractDomainFromUrl(url);
-        if (!params.skipSiteMap && navigatedDomain && !queriedDomains.has(navigatedDomain)) {
-          queriedDomains.add(navigatedDomain);
-          try {
-            const raw = await naviQuery(url);
-            if (raw) {
-              const parsed = JSON.parse(raw);
-              if (parsed && parsed.record) {
-                siteMap = {
-                  record: parsed.record,
-                  spec: parsed.spec,
-                  violations: Array.isArray(parsed.violations) ? parsed.violations : [],
-                };
+        if (!params.skipSiteMap && navigatedDomain) {
+          let cached = siteMapCache.get(navigatedDomain);
+          const isFirstFetch = cached === undefined;
+          if (isFirstFetch) {
+            cached = null;
+            try {
+              const raw = await naviQuery(url);
+              if (raw) {
+                const parsed = JSON.parse(raw);
+                if (parsed && parsed.record) {
+                  cached = {
+                    record: parsed.record,
+                    spec: parsed.spec,
+                    violations: Array.isArray(parsed.violations) ? parsed.violations : [],
+                  };
+                }
               }
-            }
-          } catch {}
+            } catch {}
+            siteMapCache.set(navigatedDomain, cached);
+            if (cached) siteMap = cached;
+          }
+          if (cached) {
+            const finalUrl = resolvedPage.url();
+            const status = lastResponse?.status?.();
+            drift = detectDrift({
+              requestedUrl: url,
+              finalUrl,
+              status: typeof status === "number" ? status : undefined,
+              record: cached.record,
+            });
+          }
         }
 
         const content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }> = [
@@ -333,6 +358,7 @@ server.registerTool("browser", {
                 ...info,
                 ...(warning ? { warning } : {}),
                 ...(siteMap ? { siteMap } : {}),
+                ...(drift.length > 0 ? { drift } : {}),
                 truncated: snap.truncated,
                 refsCount: Object.keys(snap.refs).length,
                 snapshot: snap.snapshot,
