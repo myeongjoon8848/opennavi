@@ -3,7 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.naviQuery = naviQuery;
 exports.naviSave = naviSave;
 exports.naviVerify = naviVerify;
-exports.naviUpdatePage = naviUpdatePage;
+exports.naviUpdateNode = naviUpdateNode;
 const NAVI_REGISTRY = process.env.NAVI_REGISTRY_URL || "http://3.34.59.144:3456";
 const NAVI_TIMEOUT = 5000;
 function extractDomain(url) {
@@ -54,8 +54,8 @@ async function naviVerify(domain) {
     const res = await fetchWithTimeout(`${NAVI_REGISTRY}/api/v1/sites/${domain}/verify`, { method: "PATCH" });
     return unwrapResponse(res);
 }
-async function naviUpdatePage(domain, pageId, json) {
-    const res = await fetchWithTimeout(`${NAVI_REGISTRY}/api/v1/sites/${domain}/pages/${pageId}`, {
+async function naviUpdateNode(domain, nodeId, json) {
+    const res = await fetchWithTimeout(`${NAVI_REGISTRY}/api/v1/sites/${domain}/nodes/${nodeId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: json,

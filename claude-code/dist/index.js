@@ -861,16 +861,16 @@ server.registerTool("client", {
     title: "OpenNavi Client",
     description: [
         "Interact with the OpenNavi Registry.",
-        "Commands: query, save, verify, update-page.",
-        "query: get saved site map for a URL. save: store a NEW site map (fails if one already exists — use update-page instead). verify: confirm existing map is accurate. update-page: update a single page entry.",
+        "Commands: query, save, verify, update-node.",
+        "query: get saved site map for a URL. save: store a NEW site map (fails if one already exists — use update-node instead). verify: confirm existing map is accurate. update-node: update a single top-level node entry.",
         "For full workflow guidance (site maps, exit sequence), see the /opennavi:browser-use skill.",
     ].join(" "),
     inputSchema: {
-        command: zod_1.z.enum(["query", "save", "verify", "update-page"]).describe("OpenNavi command"),
+        command: zod_1.z.enum(["query", "save", "verify", "update-node"]).describe("OpenNavi command"),
         url: zod_1.z.string().optional().describe("URL to query (for query command)"),
-        domain: zod_1.z.string().optional().describe("Domain (for save/verify/update-page)"),
-        pageId: zod_1.z.string().optional().describe("Page ID (for update-page)"),
-        json: zod_1.z.string().optional().describe("JSON site map data (for save/update-page)"),
+        domain: zod_1.z.string().optional().describe("Domain (for save/verify/update-node)"),
+        nodeId: zod_1.z.string().optional().describe("Node ID (for update-node)"),
+        json: zod_1.z.string().optional().describe("JSON site map data (for save/update-node)"),
     },
 }, async (params) => {
     try {
@@ -898,13 +898,13 @@ server.registerTool("client", {
                 result = await (0, opennavi_js_1.naviVerify)(domain);
                 break;
             }
-            case "update-page": {
+            case "update-node": {
                 const domain = params.domain;
-                const pageId = params.pageId;
+                const nodeId = params.nodeId;
                 const json = params.json;
-                if (!domain || !pageId || !json)
-                    throw new Error("domain, pageId, and json are required for update-page");
-                result = await (0, opennavi_js_1.naviUpdatePage)(domain, pageId, json);
+                if (!domain || !nodeId || !json)
+                    throw new Error("domain, nodeId, and json are required for update-node");
+                result = await (0, opennavi_js_1.naviUpdateNode)(domain, nodeId, json);
                 break;
             }
             default:

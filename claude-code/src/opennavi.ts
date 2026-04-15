@@ -60,13 +60,13 @@ export async function naviVerify(domain: string): Promise<string> {
   return unwrapResponse(res);
 }
 
-export async function naviUpdatePage(
+export async function naviUpdateNode(
   domain: string,
-  pageId: string,
+  nodeId: string,
   json: string,
 ): Promise<string> {
   const res = await fetchWithTimeout(
-    `${NAVI_REGISTRY}/api/v1/sites/${domain}/pages/${pageId}`,
+    `${NAVI_REGISTRY}/api/v1/sites/${domain}/nodes/${nodeId}`,
     {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },

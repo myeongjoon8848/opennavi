@@ -119,12 +119,55 @@ Use `violations` from the Step 1 response to decide:
 
 - **New site** (record was null): `save` with data conforming to `spec.rules`.
 - **`violations` is non-empty**: rewrite the entire map to conform to `spec.rules`, then `save`. **Do NOT verify.**
-- **`violations` is empty + no page changed**: `verify`.
-- **`violations` is empty + single page changed**: `update-page`.
+- **`violations` is empty + no node changed**: `verify`.
+- **`violations` is empty + single node changed**: `update-node`.
 
-Follow `spec.rules` from the Step 1 response for all content rules. Pages must be an object keyed by page ID (NOT an array).
+Follow `spec.rules` from the Step 1 response for all content rules. `nodes` must be an object keyed by kebab-case node ID.
 
-**Description rules** — describe what the page IS and what you can DO, never what it CONTAINS:
+**Site map shape (v0.4):**
+
+```json
+{
+  "domain": "example.com",
+  "overview": "SSR e-commerce. No auth for browsing. CAPTCHA on checkout. AJAX paginated results.",
+  "nodes": {
+    "home": {
+      "url": "/",
+      "kind": "dashboard",
+      "summary": "Landing page with search and featured products",
+      "transitions": [
+        { "to": "search-results", "via": "submit search box" },
+        { "to": "product-detail", "via": "click featured product" }
+      ]
+    },
+    "product-detail": {
+      "url": "/products/{id}",
+      "kind": "detail",
+      "summary": "Product page with images, price, variants, add-to-cart",
+      "transitions": [
+        { "to": "checkout", "via": "click Buy Now", "note": "triggers CAPTCHA" }
+      ],
+      "contains": {
+        "variant-picker": {
+          "kind": "form",
+          "summary": "Size/color variant selector below main image",
+          "transitions": [{ "to": ".variant-picker", "via": "select option" }]
+        }
+      }
+    }
+  }
+}
+```
+
+Key rules:
+- `kind` ∈ `list | detail | search | form | dashboard`
+- `url` uses `{variable}` patterns for dynamic paths (e.g., `/products/{id}`, `/wiki/{ArticleName}`). Hardcoded specific URLs are a bug.
+- `transitions[].via` is a **semantic action** (e.g., "click Buy Now", "submit search box"). Never use CSS selectors, element IDs, or JS function names.
+- `transitions[].to` is a node ID. Inside `contains`, use `.name` to reference a sibling sub-node. Top-level IDs are plain (`product-detail`).
+- `transitions[].note` (optional) captures non-obvious behavior: "AJAX, URL unchanged", "opens new window", "triggers CAPTCHA".
+- `contains` holds in-page sub-states (modals, tabs, wizard steps, filter panels). They share the parent URL. Depth 1 only.
+
+**Summary rules** — describe what the node IS and what you can DO, never what it CONTAINS:
 
 | ✅ Good | ❌ Bad |
 |---------|--------|
@@ -132,12 +175,12 @@ Follow `spec.rules` from the Step 1 response for all content rules. Pages must b
 | `"Person bio page with education, career, awards sections"` | `"PhD from Harvard, works at IBM, won Nobel Prize"` |
 | `"Package detail with readme, version history, dependency tabs"` | `"v4.3.6, 130M weekly downloads, 0 dependencies"` |
 
-Descriptions must be **reusable across visits** — if the data on the page changes, the description should still be accurate. Factual content (names, numbers, dates, answers) belongs in the agent's response, not in the map.
+Summaries must be **reusable across visits** — if the data on the page changes, the summary should still be accurate. Factual content (names, numbers, dates, answers) belongs in the agent's response, not in the map.
 
 ```
-client(command="save", domain="example.com", json="{\"overview\":\"...\",\"pages\":{\"page-id\":{\"url\":\"/path\",\"type\":\"list\",\"description\":\"...\",\"linksTo\":[\"other-page\"]}}}")
+client(command="save", domain="example.com", json="{\"overview\":\"...\",\"nodes\":{\"product-detail\":{\"url\":\"/products/{id}\",\"kind\":\"detail\",\"summary\":\"...\",\"transitions\":[{\"to\":\"home\",\"via\":\"click logo\"}]}}}")
 client(command="verify", domain="example.com")
-client(command="update-page", domain="example.com", pageId="product-list", json="{\"url\":\"/products\",\"type\":\"list\",\"description\":\"...\",\"linksTo\":[]}")
+client(command="update-node", domain="example.com", nodeId="product-detail", json="{\"url\":\"/products/{id}\",\"kind\":\"detail\",\"summary\":\"...\",\"transitions\":[]}")
 ```
 
 ### 3b. Close browser

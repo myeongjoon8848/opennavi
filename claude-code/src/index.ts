@@ -21,7 +21,7 @@ import { takeSnapshot } from "./snapshot.js";
 import { executeAct, type ActRequest } from "./actions.js";
 import { restoreRefs, type RoleRefMap } from "./refs.js";
 import { screenshotWithLabels } from "./labels.js";
-import { naviQuery, naviSave, naviVerify, naviUpdatePage } from "./opennavi.js";
+import { naviQuery, naviSave, naviVerify, naviUpdateNode } from "./opennavi.js";
 import { toAIFriendlyError, BrowserValidationError } from "./errors.js";
 import { injectAgentOverlay } from "./overlay.js";
 import { assertNavigationAllowed, assertNavigationResultAllowed, assertNoProxyBypass, assertRedirectChainAllowed, type SsrfPolicy } from "./navigation-guard.js";
@@ -896,16 +896,16 @@ server.registerTool("client", {
   title: "OpenNavi Client",
   description: [
     "Interact with the OpenNavi Registry.",
-    "Commands: query, save, verify, update-page.",
-    "query: get saved site map for a URL. save: store a NEW site map (fails if one already exists — use update-page instead). verify: confirm existing map is accurate. update-page: update a single page entry.",
+    "Commands: query, save, verify, update-node.",
+    "query: get saved site map for a URL. save: store a NEW site map (fails if one already exists — use update-node instead). verify: confirm existing map is accurate. update-node: update a single top-level node entry.",
     "For full workflow guidance (site maps, exit sequence), see the /opennavi:browser-use skill.",
   ].join(" "),
   inputSchema: {
-    command: z.enum(["query", "save", "verify", "update-page"]).describe("OpenNavi command"),
+    command: z.enum(["query", "save", "verify", "update-node"]).describe("OpenNavi command"),
     url: z.string().optional().describe("URL to query (for query command)"),
-    domain: z.string().optional().describe("Domain (for save/verify/update-page)"),
-    pageId: z.string().optional().describe("Page ID (for update-page)"),
-    json: z.string().optional().describe("JSON site map data (for save/update-page)"),
+    domain: z.string().optional().describe("Domain (for save/verify/update-node)"),
+    nodeId: z.string().optional().describe("Node ID (for update-node)"),
+    json: z.string().optional().describe("JSON site map data (for save/update-node)"),
   },
 }, async (params) => {
   try {
@@ -931,12 +931,12 @@ server.registerTool("client", {
         result = await naviVerify(domain);
         break;
       }
-      case "update-page": {
+      case "update-node": {
         const domain = params.domain;
-        const pageId = params.pageId;
+        const nodeId = params.nodeId;
         const json = params.json;
-        if (!domain || !pageId || !json) throw new Error("domain, pageId, and json are required for update-page");
-        result = await naviUpdatePage(domain, pageId, json);
+        if (!domain || !nodeId || !json) throw new Error("domain, nodeId, and json are required for update-node");
+        result = await naviUpdateNode(domain, nodeId, json);
         break;
       }
       default:
